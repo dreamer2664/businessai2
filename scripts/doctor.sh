@@ -3,7 +3,9 @@
 # Run from Windows PowerShell (one line, works even if the local repo is broken):
 #   wsl bash -lc "curl -sL https://raw.githubusercontent.com/dreamer2664/businessai2/main/scripts/doctor.sh | bash"
 # It NEVER prints secret values — only key names and value lengths.
+DOCTOR_VERSION=3
 set -u
+echo "--- doctor v$DOCTOR_VERSION ---"
 REPO_URL="https://github.com/dreamer2664/businessai2.git"
 
 # 1. find the repo (or clone it fresh)
