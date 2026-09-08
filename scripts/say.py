@@ -33,7 +33,7 @@ def _env():
 
 ENV = _env()
 OWNER = ENV.get("GH_OWNER", "dreamer2664")
-REPO = ENV.get("GH_REPO", "businessai")
+REPO = ENV.get("GH_REPO", "businessai2")
 TOKEN = ENV.get("GITHUB_TOKEN", "")
 API = f"https://api.github.com/repos/{OWNER}/{REPO}/contents/"
 

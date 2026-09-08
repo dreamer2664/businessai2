@@ -2,7 +2,7 @@
 # Re-fetch everything the sandbox loses on a reset (git-ignored downloads, pip packages, browser). Idempotent.
 cd "$(dirname "$0")/.." || exit 1
 mkdir -p release/llm release/packs
-REL=https://github.com/dreamer2664/businessai/releases/download/latest
+REL=https://github.com/dreamer2664/businessai2/releases/download/latest
 for a in operations.kdw business.kdw; do [ -s release/packs/$a ] || curl -sL -o release/packs/$a "$REL/$a"; done
 [ -s release/brain.kdr ] || curl -sL -o release/brain.kdr "$REL/brain.kdr"
 [ -x release/kdr-brain-lite ] || { curl -sL -o release/kdr-brain-lite "$REL/kdr-brain-lite" && chmod +x release/kdr-brain-lite; }

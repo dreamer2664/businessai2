@@ -31,7 +31,7 @@ state/      runtime memory + logs (git-ignored)
 
 ## Run it (Linux / WSL, free, nothing to install beyond python3) — Windows step-by-step: [docs/INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md)
 ```sh
-git clone https://github.com/dreamer2664/businessai && cd businessai
+git clone https://github.com/dreamer2664/businessai2 && cd businessai2
 sh scripts/install.sh          # creates .secrets/env — put the bot token + your Telegram username in it
 sh scripts/run.sh              # foreground; or: sh scripts/service.sh  (starts at boot, auto-restarts)
 ```

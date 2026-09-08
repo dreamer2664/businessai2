@@ -13,3 +13,11 @@
 - 2026-09-08 19:55 (builder): Fixes from your Telegram log are pushed (e04e4aa). Update the PC: `cd ~/businessai && git pull && sh scripts/service.sh`.
   Then re-try the same thing: send the Kawhi Leonard request → the plan should name Vinted + subito.it and your "shipping on, not hand-offs" condition, and start at once even if it was studying. "stop" answers in words, immediately.
   New test suite: score_stop 11/11; brief 34/34; talk 460/460.
+- 2026-09-08 20:35 (builder, new): The old chat and its token were lost. New home: **github.com/dreamer2664/businessai2** — all 154 commits
+  pushed, the `latest` release re-created with the same five assets (brain.kdr, business.kdw, operations.kdw, kdr-brain-lite,
+  llama-server-static); every script/URL now points at businessai2. On the PC: `cd ~ && git clone https://github.com/dreamer2664/businessai2`
+  (or in the existing folder: `git remote set-url origin https://github.com/dreamer2664/businessai2.git && git pull`), copy your old
+  `.secrets/env` across and set `GH_REPO=businessai2` + the new token in it.
+  Health check in the new sandbox before the move: brief 34/34, stop 11/11, talk 460/460, mind 42/42, store 40/40, phone 23/23, sites 41/41,
+  sellers 34/34, docs 20/20, accounts 12/12, study 20/20, rehearsal 19/19, walls 14/14, channels 36/36, inbox 23/23, packs 52/55 + 39/41,
+  shopfacts 15/16 (one miss to look at — the model-drafted ones vary a little run to run).

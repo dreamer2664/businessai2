@@ -17,7 +17,7 @@ If it doesn't open by itself: Start menu → "Ubuntu".
 ## 2. Get the code (inside the Ubuntu window)
 ```sh
 sudo apt update && sudo apt install -y git python3
-git clone https://github.com/dreamer2664/businessai
+git clone https://github.com/dreamer2664/businessai2
 cd businessai
 sh scripts/install.sh
 ```

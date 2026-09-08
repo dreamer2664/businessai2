@@ -43,7 +43,7 @@ class Brain:
         """Download release packs that are not on this machine yet (new packs arrive with a plain `git pull` this way)."""
         got = []
         for name in self.missing_packs():
-            url = f"https://github.com/{os.environ.get('BAI_REPO', 'dreamer2664/businessai')}/releases/download/latest/{name}"
+            url = f"https://github.com/{os.environ.get('BAI_REPO', 'dreamer2664/businessai2')}/releases/download/latest/{name}"
             tmp = config.PACKS_DIR / (name + ".part")
             try:
                 config.PACKS_DIR.mkdir(parents=True, exist_ok=True)

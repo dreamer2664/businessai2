@@ -1,9 +1,9 @@
 #!/bin/sh
 # Download the brain (engine + models + knowledge packs) from the GitHub Release into release/.
-#   sh scripts/get_brain.sh            # latest release of dreamer2664/businessai
+#   sh scripts/get_brain.sh            # latest release of dreamer2664/businessai2
 set -e
 cd "$(dirname "$0")/.."
-REPO="${BAI_REPO:-dreamer2664/businessai}"
+REPO="${BAI_REPO:-dreamer2664/businessai2}"
 mkdir -p release/packs
 for f in kdr-brain-lite brain.kdr; do
   [ -s "release/$f" ] || { echo "fetching $f"; curl -fL --progress-bar -o "release/$f" "https://github.com/$REPO/releases/download/latest/$f"; }

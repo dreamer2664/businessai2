@@ -135,7 +135,7 @@ class Planner:
         return False
 
     STATIC_URL = "https://github.com/%s/%s/releases/download/latest/llama-server-static" % (
-        os.environ.get("GH_OWNER", "dreamer2664"), os.environ.get("GH_REPO", "businessai"))
+        os.environ.get("GH_OWNER", "dreamer2664"), os.environ.get("GH_REPO", "businessai2"))
 
     def _self_repair(self, env):
         """An old install may carry the upstream llama-server that needs system libraries (libgomp, newer glibc).
