@@ -38,6 +38,11 @@ if grep -q "^GH_REPO=" .secrets/env 2>/dev/null; then
 else
   echo "GH_REPO=businessai2" >> .secrets/env
 fi
+if grep -q "^GH_OWNER=your-github-username" .secrets/env 2>/dev/null; then
+  sed -i 's/^GH_OWNER=.*/GH_OWNER=dreamer2664/' .secrets/env
+  echo "(GH_OWNER was still the template placeholder - set to dreamer2664)"
+fi
+echo "GH_OWNER/GH_REPO: $(grep '^GH_OWNER=' .secrets/env 2>/dev/null | cut -d= -f2) / $(grep '^GH_REPO=' .secrets/env 2>/dev/null | cut -d= -f2)"
 awk -F= '/^[A-Za-z_][A-Za-z0-9_]*=/ {v=substr($0,index($0,"=")+1); gsub(/["\047]/,"",v); gsub(/^[ \t]+|[ \t]+$/,"",v); print $1": len="length(v)}' .secrets/env 2>/dev/null || echo "(unreadable .secrets/env)"
 for k in TELEGRAM_BOT_TOKEN GITHUB_TOKEN; do
   grep -q "^$k=.." .secrets/env 2>/dev/null || echo "!! $k is EMPTY - the bot cannot run without it"
