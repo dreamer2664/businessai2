@@ -728,6 +728,14 @@ class Inbox:
                 if not re.search(re.escape(a) + r"\s*[-–]\s*" + re.escape(b), known):
                     flags.append(f"states a delivery time that is on no shop page: {a}-{b} days")
                     break
+            ccode, cname = country_in(source or "")
+            if ccode and shipping_days and not [f for f in flags if f.startswith("states a delivery time that is on no shop page")]:
+                words = [w for w, c, _ in COUNTRY_WORDS if c == ccode]
+                named = [f["text"].lower() for f in self.shopfacts.facts
+                         if any(re.search(r"\b" + re.escape(w) + r"\b", f["text"].lower()) for w in words)]
+                if named and not any(re.search(re.escape(a) + r"\s*[-–]\s*" + re.escape(b), t)
+                                     for a, b, _ in shipping_days for t in named):
+                    flags.append(f"states a delivery time for {cname} that the shop page does not give for {cname}")
             if re.search(r"\b7-15 business days\b", low) and "7-15" not in known.replace("–", "-").split("shipping: exactly")[0] and (self.shopfacts.covers("delivery time")):
                 flags.append("uses the generic 7-15 days instead of the shop's own delivery times")
         if c.get("product"):
