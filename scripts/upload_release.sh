@@ -4,7 +4,7 @@
 set -e
 cd "$(dirname "$0")/.."
 [ -f .secrets/env ] && { set -a; . ./.secrets/env; set +a; }
-GH_TOKEN="${GH_TOKEN:-$GITHUB_TOKEN}"; : "${GH_OWNER:?}"; : "${GH_TOKEN:?}"; GH_REPO="${GH_REPO:-businessai}"; TAG="${TAG:-latest}"
+GH_TOKEN="${GH_TOKEN:-$GITHUB_TOKEN}"; : "${GH_OWNER:?}"; : "${GH_TOKEN:?}"; GH_REPO="${GH_REPO:-businessai2}"; TAG="${TAG:-latest}"
 API="https://api.github.com/repos/$GH_OWNER/$GH_REPO"
 auth() { curl -sS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$@"; }
 rel=$(auth "$API/releases/tags/$TAG" || true)

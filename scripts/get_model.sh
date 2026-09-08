@@ -63,7 +63,7 @@ fi
 if [ ! -x release/llm/llama-server ]; then
   # our own fully static build (16 MB, needs no system libraries at all) from the project's GitHub Release
   echo "fetching llama-server (static build, 16 MB) ..."
-  if curl -fsSL -o release/llm/llama-server "https://github.com/${GH_OWNER:-dreamer2664}/${GH_REPO:-businessai}/releases/download/latest/llama-server-static"; then
+  if curl -fsSL -o release/llm/llama-server "https://github.com/${GH_OWNER:-dreamer2664}/${GH_REPO:-businessai2}/releases/download/latest/llama-server-static"; then
     chmod +x release/llm/llama-server
   else
     echo "static build unavailable, falling back to the upstream prebuilt llama.cpp $LLAMA_TAG ..."

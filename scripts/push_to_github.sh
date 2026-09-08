@@ -3,14 +3,14 @@
 # The token is only read from the environment; it is never written to disk.
 #
 #   GH_OWNER=yourname GH_TOKEN=github_pat_xxx sh scripts/push_to_github.sh
-#   optional: GH_REPO=businessai (default)  GIT_NAME / GIT_EMAIL for the commit author
+#   optional: GH_REPO=businessai2 (default)  GIT_NAME / GIT_EMAIL for the commit author
 set -eu
 # token file written once during setup (git-ignored); env vars given on the command line win
 [ -f "$(dirname "$0")/../.secrets/env" ] && { set -a; . "$(dirname "$0")/../.secrets/env"; set +a; }
 GH_TOKEN="${GH_TOKEN:-$GITHUB_TOKEN}"
 : "${GH_OWNER:?set GH_OWNER=<your GitHub username>}"
 : "${GH_TOKEN:?set GH_TOKEN=<fine-grained token with Contents + Workflows read/write>}"
-GH_REPO="${GH_REPO:-businessai}"
+GH_REPO="${GH_REPO:-businessai2}"
 export GH_OWNER GH_TOKEN GH_REPO   # the git credential helper below reads them from the environment
 cd "$(dirname "$0")/.."
 
