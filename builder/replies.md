@@ -21,3 +21,4 @@
   Health check in the new sandbox before the move: brief 34/34, stop 11/11, talk 460/460, mind 42/42, store 40/40, phone 23/23, sites 41/41,
   sellers 34/34, docs 20/20, accounts 12/12, study 20/20, rehearsal 19/19, walls 14/14, channels 36/36, inbox 23/23, packs 52/55 + 39/41,
   shopfacts 15/16 (one miss to look at — the model-drafted ones vary a little run to run).
+- 2026-09-09 (builder, new): Took over after the old chat was lost again. Verified from scratch: repo HEAD eb67eda, stop 11/11, brief 34/34, mind 42/42, talk 452/460 (8 = Chromium missing in sandbox, env-only), packs 52/55 + 39/41. Telegram: @busyness001bot token valid, nobody polling, 1 stale "connect google" pending. Owner chose: bot home = PC, order = deep read → health check → google. Added scripts/doctor.sh (PowerShell one-liner pulls it via curl, finds/clones repo, pulls, restarts service, prints secrets-safe report).
