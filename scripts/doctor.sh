@@ -3,7 +3,7 @@
 # Run from Windows PowerShell (one line, works even if the local repo is broken):
 #   wsl bash -lc "curl -sL https://raw.githubusercontent.com/dreamer2664/businessai2/main/scripts/doctor.sh | bash"
 # It NEVER prints secret values — only key names and value lengths.
-DOCTOR_VERSION=3
+DOCTOR_VERSION=4
 set -u
 echo "--- doctor v$DOCTOR_VERSION ---"
 REPO_URL="https://github.com/dreamer2664/businessai2.git"
@@ -20,9 +20,21 @@ if [ -z "$D" ] || [ ! -d "$D/.git" ]; then
   D="$HOME/businessai"
 fi
 cd "$D" || exit 1
-echo "--- repo: $D ---"
+echo "--- repo: $D (branch: $(git branch --show-current 2>&1)) ---"
 git remote set-url origin "$REPO_URL" 2>&1
-git pull 2>&1 | tail -2
+git config user.name "businessai" 2>/dev/null
+git config user.email "businessai@users.noreply.github.com" 2>/dev/null
+git config pull.rebase true 2>/dev/null
+git fetch origin main 2>&1 | tail -2
+echo "local-only commits (never pushed; kept and replayed on top of the latest code):"
+git log --oneline origin/main..HEAD 2>&1 | head -5
+git status --short 2>&1 | head -5
+if git pull --rebase origin main 2>&1 | tail -3; then
+  :
+else
+  echo "(rebase hit a conflict - aborted, your files are untouched; the bot keeps running on its current code)"
+  git rebase --abort 2>/dev/null
+fi
 echo "HEAD: $(git log --oneline -1 2>&1)"
 
 # 2. secrets: backup, point at businessai2, report key names + lengths only
