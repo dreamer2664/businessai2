@@ -49,6 +49,7 @@ from .sitebuilder import SiteBuilder, KINDS as SITE_KINDS
 from .rehearsal import Rehearsal
 from .mind import Mind
 from .progress import Progress
+from . import projects as _projects
 
 
 def money_list(orders):
@@ -87,10 +88,28 @@ while I work: "status" / "what are you doing" · "why" · "hurry up" · "stop" �
 /lessons — what I learned from my last jobs (I reflect after every one) · /thinking — what is on my mind right now
 /ideas — business ideas I jotted from short videos (/ideas <topic> = go watch some now) · /study [topic] — find and keep a good PDF in my library
 /accounts — the site accounts I created with my own e-mail (I sign up when a task needs it and tell you in one line; never money sites) · /accounts allow <site>
-/library — the documents I've written (seller checks, research, comparisons); they also land in my Drive folder · /progress — today's log in Google Docs (every job writes there as it goes; long jobs get their own page)
+/library — the documents I've written (seller checks, research, comparisons); they also land in my Drive folder · /progress — today's log in Google Docs (every job writes there as it goes; long jobs get their own page) · /projects — the ideas I'm working on in free windows ('new project: …' adds one)
+time: "at least 3 hours" = a floor (first pass, then deeper + project steps until the time is used — 'that's enough' closes it) · "at most 20 min" / "in 10 min" = a ceiling with a timer · nothing = I pick and say why
 /screen · /watch on|off — see my browser · /status · /selftest
 Browsing is read-only: I never log in, pass CAPTCHAs, buy or post. Money, public posts and customer messages will always need your OK."""
 
+
+
+def _span(mins):
+    mins = int(mins or 0)
+    if mins < 60:
+        return f"{mins} minutes"
+    return f"{mins // 60} hour" + ("s" if mins >= 120 else "") + (f" {mins % 60} min" if mins % 60 else "")
+
+
+def _floor_gist(out):
+    """The useful sentence(s) of a research text: the agreed/• lines of the synthesis, else the first content line."""
+    lines = [l.strip() for l in str(out).splitlines() if l.strip()]
+    good = [l.lstrip("✓• ").strip() for l in lines if l.startswith(("✓", "•"))]
+    if good:
+        return " · ".join(good[:2])[:300]
+    body = [l for l in lines[1:] if not l.startswith(("Research:", "(", "[", "http")) and len(l) > 30]
+    return (body[0] if body else (lines[0] if lines else ""))[:300]
 
 def _short(x, n=60):
     """Cut a goal/text for a message at a word boundary, with an ellipsis."""
@@ -148,6 +167,8 @@ class Agent:
         self.study = Study(self.tasks, planner=self.planner, google=self.google, memory=self.memory, log=self.log, notify=self.notify, viewer=self.viewer)
         self.quiet_sessions = 0
         self.last_quiet = 0
+        self.projects = _projects.Projects(log=self.log)   # item E: brainstorms + "new project: …" → steps, continued in free windows
+        self._in_floor = False
         self.sites = SiteBuilder(planner=self.planner, tasks=self.tasks, google=self.google, log=self.log, viewer=self.viewer, eyes=self.eyes)
         self.site_training = False          # "start auto training on website building" → loop until "stop"
         self.sites_built = 0
@@ -1025,6 +1046,9 @@ class Agent:
             return "Looking for a good PDF to learn from" + (f" about {arg}" if arg else "") + " — I'll tell you if I keep one."
         if low.startswith("/library"):
             return library.list_text(10) + ("\n\nDrive folder: " + self.google.folder_link() if self.google.connected() else "")
+        pr_ = _projects.command(self.projects, text)
+        if pr_ is not None:
+            return pr_
         if low.startswith("/progress") or re.fullmatch(r"(where is|show me|send me|link to)? ?(the |your |today'?s )?(progress|day log|job log)( doc(ument)?| please)?", low.strip(" ?.!")):
             if not self.google.connected():
                 return "My Google isn't connected here, so there is no progress document — /google connect first. Meanwhile 'status' tells you what I'm doing."
@@ -1147,7 +1171,7 @@ class Agent:
         """Every plain message: build a brief (goal, pace, deliverable, steps). Short jobs start at once with the plan
         shown; long ones (documents, sites) show the plan first with Go / Change / Cancel buttons."""
         low = text.strip().lower()
-        if re.fullmatch(r"\W*(?:stop|stop it|stop that|wait|hold on|pause|halt|abort|enough|cancel|cancel that|basta|ferma|fermati|fermo|aspetta|smettila|annulla)\W*", low):
+        if re.fullmatch(r"\W*(?:stop|stop it|stop that|wait|hold on|pause|halt|abort|enough|that'?s enough|good enough|ok that'?s enough|you can stop|cancel|cancel that|basta|basta cos[ìi]|ferma|fermati|fermo|aspetta|smettila|annulla)\W*", low):
             return self.stop_everything()                                             # never a question for the brain
         if getattr(self, "filler", False) and not low.startswith("/"):
             self.preempt_filler()                                                     # the owner is here → quiet time is over
@@ -2218,8 +2242,18 @@ class Agent:
         return (prefix + msg) if prefix else msg[0].upper() + msg[1:]
 
     def _finish_job(self, outcome, delivered=True):
-        """Every job ends here: reflect (one lesson), clear the clocks, then start whatever the owner queued meanwhile."""
+        """Every job ends here: reflect (one lesson), clear the clocks, then start whatever the owner queued meanwhile.
+        With a time floor ("at least 3 hours") still open, the first pass was just delivered → the floor phase starts
+        (deeper angles, project steps) and the real finish happens when the floor is honoured or the owner says 'enough'."""
         after = []
+        try:
+            if (self.pace.under_floor() and delivered and not self.stop_flag and not self._in_floor and self.active_brief
+                    and not self.mind.queue):
+                self._in_floor = True
+                threading.Thread(target=self.run_floor, args=(self.active_brief, outcome or ""), daemon=True).start()
+                return
+        except Exception as e:
+            self.log("floor_start_failed", error=str(e)[:100])
         try:
             if self.mind.job:
                 if self.mind.job.get("change"):
@@ -2253,6 +2287,119 @@ class Agent:
                 label = item.get("goal", "") if isinstance(item, dict) else item
                 self.bot.send(self.owner_id, f"▶ Now the request you queued: “{str(label)[:80]}”")
                 threading.Thread(target=self._start_queued, args=(item,), daemon=True).start()
+
+    FLOOR_ANGLES = ["costs and pricing", "risks and problems", "best options compared", "reviews and complaints", "how to start", "alternatives"]
+    FLOOR_CYCLE = 90            # seconds at least per item — deeper reading, not hammering search engines
+    FLOOR_REPORT_EVERY = 1800   # one short line to the owner every 30 min; every item goes to the job log
+
+    def run_floor(self, b, first_outcome=""):
+        """The owner asked for *at least* N: the first pass is out; now use the rest of the time on purpose — deeper angles on
+        the topic, then steps of the open projects, then study — until the floor or 'that's enough'. Never idle filler."""
+        topic = re.sub(r"\s*\(.*\)\s*$", "", str(b.get("topic") or b.get("goal") or "")).strip() or str(b.get("goal", ""))[:80]
+        f0 = self.pace.floor_left()
+        self.busy = f"deepening: {topic[:40]} (floor {f0 // 60} min)"
+        self.log("floor_start", topic=topic[:60], left_s=f0)
+        angles = list(self.FLOOR_ANGLES)
+        done_angles, project_lines, study_lines = [], [], []
+        paras, urls = [], []
+        last_report = time.time()
+        why_end = "the time you asked for is used"
+        try:
+            self.bot.send(self.owner_id, f"⏬ First pass delivered. You asked for at least {_span(self.pace.floor_min)}, so I keep going: deeper angles on "
+                                         f"“{topic[:60]}”, then steps on our projects. Say 'that's enough' to close earlier.")
+            self.progress.step(f"floor: first pass delivered, {f0 // 60} min still to use — deeper angles, then projects")
+            while self.pace.floor_left() > 0 and not self.stop_flag:
+                if self.mind.queue:
+                    why_end = "you gave me a new job, so I closed the floor early"
+                    break
+                if getattr(self.pace, "forced_hurry", False):
+                    why_end = "you said hurry"
+                    break
+                t1 = time.time()
+                line = ""
+                if angles:
+                    a = angles.pop(0)
+                    try:
+                        out = self.tasks.on_hands(self.tasks.research, f"{topic} {a}", n_pages=self.pace.pages_budget(3))
+                    except Exception as e:
+                        out = f"Task failed: {str(e)[:80]}"
+                    got = not out.startswith("Task failed") and "pages read" in out and "(0 pages" not in out
+                    done_angles.append(a)
+                    if got:
+                        body = _floor_gist(out)
+                        paras.append(f"{a.capitalize()}: {body}")
+                        urls += re.findall(r"https?://\S+", out)[:4]
+                    line = f"angle “{a}”: " + (_floor_gist(out)[:160] if got else "nothing solid found")
+                else:
+                    line = self.project_step() or ""
+                    if line:
+                        project_lines.append(line)
+                    else:
+                        try:
+                            out = self.study.quiet_session(self.quiet_sessions)
+                            self.quiet_sessions += 1
+                        except Exception as e:
+                            out = f"study failed: {str(e)[:60]}"
+                        line = "study: " + str(out).splitlines()[0][:160]
+                        study_lines.append(line)
+                if line:
+                    self.progress.step(line)
+                    self.log("floor_item", text=line[:120])
+                if time.time() - last_report >= self.FLOOR_REPORT_EVERY and self.pace.floor_left() > 0:
+                    last_report = time.time()
+                    fl = self.pace.floor_left()
+                    self.bot.send(self.owner_id, f"⏬ {fl // 3600} h {fl % 3600 // 60} min still to use — so far {len(done_angles)} deeper angle(s), "
+                                                 f"{len(project_lines)} project step(s){', ' + str(len(study_lines)) + ' study session(s)' if study_lines else ''}. Latest: {line[:120]}")
+                rest = self.FLOOR_CYCLE - (time.time() - t1)
+                while rest > 0 and self.pace.floor_left() > 0 and not self.stop_flag and not self.mind.queue:
+                    time.sleep(min(5, rest)); rest -= 5
+            if self.stop_flag:
+                why_end = "you said enough"
+        except Exception as e:
+            self.log("floor_failed", error=traceback.format_exc()[-300:])
+            why_end = f"something broke ({str(e)[:60]})"
+        used = int(time.time() - self.pace.started)
+        link = ""
+        if paras or project_lines:
+            try:
+                from .progress import Templates
+                blocks = Templates.note(f"Deeper on {topic[:60]}", paras or ["No extra angle gave anything solid."],
+                                        bullets=project_lines + [f"source: {u}" for u in dict.fromkeys(urls)][:12])
+                if self.google.connected():
+                    d = self.google.docs_create(f"Deeper on {topic[:60]}", folder="Research")
+                    self.google.docs_write_blocks(d["id"], blocks)
+                    link = d["link"]
+                    self._last_doc_link = link
+            except Exception as e:
+                self.log("floor_doc_failed", error=str(e)[:100])
+        summary = (f"⏬ Floor closed — {why_end}. {used // 3600} h {used % 3600 // 60} min used: {len(done_angles)} deeper angle(s) on “{topic[:50]}”, "
+                   f"{len(project_lines)} project step(s)" + (f", {len(study_lines)} study session(s)" if study_lines else "") + "."
+                   + (f"\n📄 Deeper notes: {link}" if link else "") + ("\n" + "\n".join("• " + x[:140] for x in project_lines[-3:]) if project_lines else ""))
+        self.pace.floor_done()
+        self._in_floor = False
+        self.busy = None
+        try:
+            self.bot.send(self.owner_id, summary)
+        finally:
+            self._finish_job((first_outcome or "") + f" | floor: {len(done_angles)} angles, {len(project_lines)} project steps", delivered=True)
+
+    def project_step(self):
+        """One step of the oldest open project: read on it, keep the finding on the step. Returns a one-line report or None."""
+        nxt = self.projects.next_step()
+        if not nxt:
+            return None
+        p, i, step = nxt
+        try:
+            out = self.tasks.on_hands(self.tasks.research, f"{p['title']}: {step}", n_pages=self.pace.pages_budget(3) if self.pace else 3)
+        except Exception as e:
+            out = f"Task failed: {str(e)[:80]}"
+        note = _floor_gist(out) if not out.startswith("Task failed") else f"could not read on it ({out[:60]})"
+        self.projects.mark(p["id"], i, note)
+        fin = self.projects.get(p["id"])["status"] == "done"
+        line = f"project {p['id']} “{p['title'][:50]}” step {i + 1}: {note[:160]}" + (" — project complete, proposal in /projects" if fin else "")
+        if fin and self.owner_id:
+            self.bot.send(self.owner_id, "📁 " + self.projects.detail(p["id"])[:1500] + "\n(Nothing was bought or posted — it's a proposal.)")
+        return line
 
     def after_job(self, text):
         """The owner's 'when you're done, …' asks: Drive upload, resend the document, or a to-do — anything else is queued as a request."""
@@ -2447,11 +2594,17 @@ class Agent:
         try:
             if self.quiet_sessions % 4 == 3 and self.rehearsals_done < 2:
                 out = "🎭 " + self.run_rehearsal("one of our products", tell=False)
+            elif self.quiet_sessions % 2 == 1 and self.projects.next_step():
+                out = "📁 " + (self.project_step() or "no project step")            # the next free window continues the projects
             else:
                 out = self.study.quiet_session(self.quiet_sessions)
+                if str(out).startswith("🧠") and getattr(self.study, "last_brainstorm", ""):
+                    newp = self.projects.from_brainstorm(self.study.last_brainstorm, when=time.strftime("%d %b"))
+                    if newp:
+                        out += f" → {len(newp)} new project(s): " + " · ".join(p["title"][:40] for p in newp) + " (/projects)"
             self.quiet_sessions += 1
             self.log("quiet_session", n=self.quiet_sessions, out=out[:120])
-            if out.startswith(("📚", "💡", "🧠")) and self.owner_id:
+            if out.startswith(("📚", "💡", "🧠", "📁")) and self.owner_id:
                 self.bot.send(self.owner_id, out)                      # one short line per kept thing, never chatter
         except Exception as e:
             if "preempted" in str(e):

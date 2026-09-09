@@ -26,7 +26,7 @@ STATUS_Q = re.compile(r"\b(what are you doing|what('s| is) (going on|happening|t
                       r"how long( still| more)?( will it take)?|how much (longer|time)|when (will|are) you (be )?(done|finished)|update\??|where are you( at)?|(did|have) you (find|found|got|get) (anything|something|it)( yet)?|"
                       r"any(thing)? (luck|news|results?)( yet)?|che stai facendo|a che punto sei|quanto manca|come va|hai trovato (qualcosa|niente))\b", re.I)
 HURRY = re.compile(r"\b(hurry( up)?|faster|quick(er|ly)?|speed (it )?up|wrap (it )?up|finish (it )?(up|now)|i need it now|come on|sbrigati|veloce|fai presto|concludi)\b", re.I)
-STOP = re.compile(r"^\W*(stop|cancel|abort|enough|forget it|never ?mind|drop it|basta|ferma(ti)?|annulla|lascia (stare|perdere))\b", re.I)
+STOP = re.compile(r"^\W*(stop|cancel|abort|enough|that'?s enough|(ok|okay),? that'?s enough|good enough|you can stop|forget it|never ?mind|drop it|basta( cos[ìi])?|ferma(ti)?|annulla|lascia (stare|perdere))\b", re.I)
 WHY = re.compile(r"\b(why|what for|perch[eé]|how come)\b", re.I)
 CHAT = re.compile(r"^\W*((ok(ay)?|alright|fine|good|nice|great|cool|perfect|super|wow|lol|haha|thanks?( you)?( a lot| so much)?|thank you|grazie( mille)?|ottimo|perfetto|bene|hi|hello|hey|ciao|👍|❤️|🙏|👌|😊|🙂)[\s,!.]*)+"
                   r"((job|work) so far|so far|then|keep going|go on|continue|carry on|no rush|no hurry|take your time|whenever|con calma|vai pure|continua)?\W*$", re.I)

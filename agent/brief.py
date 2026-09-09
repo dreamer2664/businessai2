@@ -33,6 +33,8 @@ _QUICK = r"\b(real quick|quick(ly)?|asap|right away|fast|hurry|in a hurry|subito
 _SLOW = r"\b(take (it|your time) (real |really )?slow|take your time|no rush|no hurry|slowly|whenever|con calma|piano)\b"
 _DEADLINE = r"\b(?:in|within|entro|tra|fra)\s+(?:(mezz[’']?ora)|(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|half an|half|un[’']?|una|due|tre|quattro|cinque|sei|sette|otto|nove|dieci|undici|dodici)\s*(min(?:ute)?s?|h(?:ou)?rs?|or[ae]|minuti|day|days|giorni))\b"
 _AWAY = r"\b(?:(?:i(?:'m| am| will be| ll be)|gonna be|going to (?:be|work)|at work|out|away|busy|sleeping|asleep|sono (?:fuori|via|al lavoro|occupat[oa])|torno|dormo)\D{0,40}?)(?:(mezz[’']?ora)|(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|half an|half|un[’']?|una|due|tre|quattro|cinque|sei|sette|otto|nove|dieci|undici|dodici)\s*(h(?:ou)?rs?|or[ae]|min(?:ute)?s?|minuti))\b"
+_FLOOR = r"\b(?:at least|atleast|minimum(?: of)?|min(?:imum)?\.?|no less than|not less than|spend(?: at least)?|take(?: at least)?|almeno|minimo|non meno di)\s+(?:(mezz[’']?ora)|(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|half an|half|un[’']?|una|due|tre|quattro|cinque|sei|sette|otto|nove|dieci|undici|dodici)\s*(min(?:ute)?s?|h(?:ou)?rs?|or[ae]|minuti))\b"
+_CEILING = r"\b(?:at most|no more than|not more than|max(?:imum)?(?: of)?\.?|up to|al massimo|massimo|non più di|non piu di)\s+(?:(mezz[’']?ora)|(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|half an|half|un[’']?|una|due|tre|quattro|cinque|sei|sette|otto|nove|dieci|undici|dodici)\s*(min(?:ute)?s?|h(?:ou)?rs?|or[ae]|minuti))\b"
 _NUM = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
         "ten": 10, "eleven": 11, "twelve": 12, "fifteen": 15, "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50,
         "half an": 0.5, "half": 0.5, "un": 1, "una": 1, "due": 2, "tre": 3, "quattro": 4, "cinque": 5, "sei": 6,
@@ -54,7 +56,7 @@ def _minutes(n, unit):
     return int(n)
 
 
-_PACE_CLAUSES = [_QUICK, _SLOW, _DEADLINE, _AWAY,
+_PACE_CLAUSES = [_QUICK, _SLOW, _DEADLINE, _AWAY, _FLOOR, _CEILING,
                  r"\b(make it quick|i need it|i want it|i'?m (going to|gonna) (work|be out|be away|sleep)[^,.:;]*|take it (real |really )?slow|no rush)\b",
                  r"\b(for|in) (the next )?(\d+|a|an|one|two|three|four|five|six|eight|ten) ?(h(?:ou)?rs?|min(?:ute)?s?)\b"]
 _LEAD = r"^(?:(?:hey|hi|hello|ciao|ok|okay|so|please|per favore|also|and|then|now|real quick|quick(?:ly)?|can you|could you|would you|will you|i want you to|i need you to|i'?d like you to|i want|i need|i'?d like|find me|find|get me|look for|search for|search|show me|tell me|give me|make me|compare|write me|trovami|cercami|trova|cerca)[ ,:]+)+"
@@ -116,14 +118,26 @@ def parse_duration(text):
 def parse_pace(text):
     """Rules only. Returns {"pace": quick|normal|slow, "deadline_min": int|None, "budget_min": int|None, "why": str}."""
     low = " " + text.lower() + " "
-    out = {"pace": "normal", "deadline_min": None, "budget_min": None, "why": ""}
+    out = {"pace": "normal", "deadline_min": None, "budget_min": None, "floor_min": None, "why": ""}
+    m = re.search(_FLOOR, low)
+    if m:
+        mins = _dur(m)
+        if mins and mins >= 5:
+            out.update(pace="slow", floor_min=mins, why=f"you asked for at least {_span(mins)} — a floor, not a deadline")
+    m = re.search(_CEILING, low)
+    if m:
+        mins = _dur(m)
+        if mins and mins != out["floor_min"]:
+            out.update(deadline_min=mins, why=(out["why"] + "; " if out["why"] else "") + f"at most {_span(mins)} — a ceiling")
+            if mins <= 15 and not out["floor_min"]:
+                out["pace"] = "quick"
     m = re.search(_AWAY, low)
     if m:
         mins = _dur(m)
         if mins and mins >= 30:
             out.update(pace="slow", budget_min=mins, why=f"you said you are away for about {mins // 60 if mins >= 60 else mins} {'hours' if mins >= 120 else 'hour' if mins >= 60 else 'minutes'}")
     m = re.search(_DEADLINE, low)
-    if m:
+    if m and not out["deadline_min"]:
         mins = _dur(m)
         if mins:
             if out["budget_min"] and mins == out["budget_min"]:
@@ -131,7 +145,7 @@ def parse_pace(text):
             else:
                 out.update(deadline_min=mins, why=f"you want it in {mins} minutes" if mins < 120 else f"you want it in {mins // 60} hours")
                 out["pace"] = "quick" if mins <= 15 else out["pace"]
-    if re.search(_QUICK, low) and out["pace"] != "slow":
+    if re.search(_QUICK, low) and out["pace"] != "slow" and not out["floor_min"]:
         out["pace"] = "quick"
         out["why"] = out["why"] or "you said quick"
         if out["deadline_min"] is None and re.search(r"\b(in 10|10 min|ten min|real quick|make it quick)\b", low):
@@ -140,6 +154,20 @@ def parse_pace(text):
         out["pace"] = "slow"
         out["why"] = out["why"] or "you said to take it slow"
     return out
+
+
+def _span(mins):
+    mins = int(mins)
+    if mins < 60:
+        return f"{mins} minutes"
+    if mins % 60 == 0:
+        return f"{mins // 60} hour" + ("s" if mins > 60 else "")
+    return f"{mins // 60} h {mins % 60} min"
+
+
+# what a job usually takes when the owner gives no time — said in the plan, so "unspecified" is a choice, not a guess
+USUAL_MIN = {"seller_check": "5–10", "research": "2–5", "compare": "3–6", "trending": "1–3", "build_site": "5–10",
+             "watch": "1–3", "summarize": "1", "visit": "1–2", "post": "1", "ask": "1"}
 
 
 def _rule_brief(text, pace):
@@ -330,10 +358,15 @@ class Brief:
         """Render for Telegram: what I understood, the pace, the plan."""
         p = b["pace"]
         pace_line = {"quick": "⏱ quick", "slow": "🐢 slow — I'll use the time", "normal": "⏳ normal pace"}[p["pace"]]
+        if p.get("floor_min"):
+            pace_line += (f" · ⏬ at least {_span(p['floor_min'])}, as you asked: I hand you the first pass as soon as it's ready, then keep going "
+                          f"(deeper reading on the topic, steps on our projects) until the time is used — say 'that's enough' to stop earlier")
         if p.get("deadline_min"):
-            pace_line += f" · you want it in {p['deadline_min']} min — I'll keep a timer on my screen and tell you if I run late"
+            pace_line += f" · ⏰ {'at most ' if p.get('floor_min') or 'ceiling' in (p.get('why') or '') else 'you want it in '}{p['deadline_min']} min — I'll keep a timer on my screen and tell you if I run late"
         if p.get("budget_min"):
             pace_line += f" · up to {p['budget_min'] // 60} h available — when I finish early I'll go on studying"
+        if p["pace"] == "normal" and not p.get("deadline_min") and not p.get("budget_min") and not p.get("floor_min"):
+            pace_line += f" — you gave no time, so I pick: about {USUAL_MIN.get(b.get('kind'), '2–5')} min is what a {b.get('kind', 'job').replace('_', ' ')} usually needs; tell me a floor or a ceiling if you want otherwise"
         out = [f"📋 What I understood: {b['goal']}", f"{pace_line}", f"📦 I'll hand you: {dict(answer='an answer', list='a list', document='a document with links and pictures', file='a file', website='a website', post='a post to approve', reply='a reply to approve')[b['deliverable']]}"]
         if b["steps"]:
             out.append("My plan:\n" + "\n".join(f"{i + 1}. {s}" for i, s in enumerate(b["steps"])))

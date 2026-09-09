@@ -28,9 +28,12 @@ Reality check on 2026-09-09 with the real browser:
       fixed for emoji (UTF-16 ranges) and links; docs/PROGRESS.md; progress 16/16 (+1 live), docs_native 7→9) — the native
       Docs writer exists; per-type templates (trending table, deal alert, research cards); every finished job gets its Doc
       link in the chat; heartbeat Doc for long sessions.
-- [ ] E. Time: "at least N hours" = a floor (the job keeps going, deeper reading + project work, never idle filler),
-      "at most / in N" = a ceiling, unspecified = the agent picks and says why. Project list: brainstorms become
-      projects (state/projects.json), the next free window continues them.
+- [x] E. Time (2026-09-09 night: brief.parse_pace floor/ceiling EN+IT, pace.floor_until, core.run_floor = first pass →
+      deeper angles → project steps → study until the floor or 'that's enough', 30-min lines, "Deeper on …" Doc; plan text
+      says my pick when no time is given; agent/projects.py + /projects, brainstorms → projects, quiet time continues them;
+      docs/TIME.md; floor 44/44) — "at least N hours" = a floor (the job keeps going, deeper reading + project work, never
+      idle filler), "at most / in N" = a ceiling, unspecified = the agent picks and says why. Project list: brainstorms
+      become projects (state/projects.json), the next free window continues them.
 - [x] F. Marketplaces (2026-09-09 night, 9be45ce + next: measured live from the sandbox — Vinted and subito both serve a plain
       headless visitor, no walls in ~40 polite hits; readers rewritten for the 2026 layouts, Vinted's own page JSON gives
       seller location / feedback split / buyers' words / shipping; markets 20→40, sellers 34; docs/MARKETS.md). Still to do
@@ -47,3 +50,4 @@ Reality check on 2026-09-09 with the real browser:
 - 2026-09-09 (evening): ROOT CAUSE of months of 'answers only while someone works on it': Windows stops the WSL VM 60 s after the last terminal closes (journal: Stopping businessai.service after each command; -- Boot -- on the next). Fix in docs/INSTALL_WINDOWS.md §4 (.wslconfig vmIdleTimeout=-1 + keeper scheduled task). The sandbox has the same symptom for a different reason (processes suspended between turns) → the bot's home is the PC only.
 - 2026-09-09 (evening): A proven live with the owner; B + C shipped (youtube 12→19, brief 34→39, talk +3, fallback 17→20). Next: D (Doc templates + heartbeat doc), E (time floors/ceilings, projects).
 - 2026-09-09 (night): F shipped (markets 40/40, sellers 34/34, subito live e2e), D shipped (progress 16/16 live-verified). Next: E (time floor + project list), then G/H/I.
+- 2026-09-09 (night, later): E shipped (floor 44/44). Next: G (Gmail labels/tidy), H (knowledge pages), I (plan → critique → act on the live screen).

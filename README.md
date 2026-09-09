@@ -81,6 +81,10 @@ Try it without Telegram: `python3 -m agent.viewer --demo` (runs a few read-only 
    *job log* Doc (plan, each step as it happens, snags, your changes, result, "still on it" heartbeat); `/progress` gives
    today's link. Finished jobs land in Drive as native Docs (tables, links) from per-kind templates. [docs/PROGRESS.md](docs/PROGRESS.md).
 
+**Time words** — "at least 3 hours" is a floor (first pass, then deeper angles and project steps until the time is used;
+"that's enough" closes it), "at most 20 min" a ceiling with a timer, no time = the agent picks and says why. Ideas from
+brainstorms and "new project: …" live in `/projects` and are continued in free windows. [docs/TIME.md](docs/TIME.md).
+
 ## Customer messages (milestone 5, practice channel)
 - `agent/inbox.py` reads `state/inbox.jsonl`, classifies each message (order status, damaged, return, cancel, discount,
   product question, complaint, compliment, spam, press/partnership, other), drafts a reply with the thinking model

@@ -1,5 +1,7 @@
 """The pace clock (milestone 13): "I need it in 10 minutes" → a visible timer and reminders, never a stop.
 "I'm away 5 hours, take it slow" → a time budget: the task may use it, and whatever is left goes to self-study.
+"Take at least 3 hours" → a floor: the first pass is delivered, then the agent keeps deepening (more reading angles,
+project steps) until the floor — never idle filler; "at most 20 minutes" → a ceiling (the deadline timer).
 
 One Pace object lives on the Agent. The live screen shows it, /status prints it, and long loops call `tick()` to get
 a reminder string ("⏰ owner wanted this in 10 min — 2 min left") at most once every REMIND_EVERY seconds.
@@ -23,6 +25,8 @@ class Pace:
         self.deadline = None          # epoch seconds when the owner wants it
         self.deadline_min = None      # what the owner asked for ("in 10 minutes")
         self.budget_until = None      # epoch seconds until which the owner is away (slow mode)
+        self.floor_until = None       # epoch seconds before which the job must not end ("at least 3 hours")
+        self.floor_min = None
         self.last_remind = 0.0
         self.late_told = False
         self.done_at = None
@@ -38,7 +42,10 @@ class Pace:
             self.deadline = self.started + 60 * brief_pace["deadline_min"]
         if brief_pace.get("budget_min"):
             self.budget_until = self.started + 60 * brief_pace["budget_min"]
-        self.log("pace_set", mode=self.mode, deadline_min=brief_pace.get("deadline_min"), budget_min=brief_pace.get("budget_min"))
+        if brief_pace.get("floor_min"):
+            self.floor_min = int(brief_pace["floor_min"])
+            self.floor_until = self.started + 60 * self.floor_min
+        self.log("pace_set", mode=self.mode, deadline_min=brief_pace.get("deadline_min"), budget_min=brief_pace.get("budget_min"), floor_min=brief_pace.get("floor_min"))
 
     def finish(self):
         self.done_at = time.time()
@@ -61,6 +68,19 @@ class Pace:
     def active(self):
         return bool(self.started) and self.done_at is None
 
+    def floor_left(self):
+        """Seconds still owed to the floor ("at least N"), 0 when none/none left."""
+        if not self.floor_until or self.stopped:
+            return 0
+        return max(0, int(self.floor_until - time.time()))
+
+    def under_floor(self):
+        return self.floor_left() > 0
+
+    def floor_done(self):
+        """The floor was honoured (or the owner said 'enough') → the job may end."""
+        self.floor_until = None
+
     def text(self):
         """One line for /status and the live screen."""
         if not self.started:
@@ -76,6 +96,9 @@ class Pace:
         b = self.budget_left()
         if b is not None:
             bits.append(f"🐢 owner away — {b // 3600} h {b % 3600 // 60} min of quiet time left" if b > 0 else "owner may be back — wrap up")
+        if self.floor_min:
+            f = self.floor_left()
+            bits.append(f"⏬ at least {self.floor_min // 60} h {self.floor_min % 60} min asked — {f // 3600} h {f % 3600 // 60} min still to use" if f > 0 else f"⏬ the {self.floor_min} min floor is honoured")
         if self.done_at:
             bits.append("done")
         return " · ".join(bits)
@@ -118,7 +141,7 @@ class Pace:
         """How many pages a research step may read, by pace."""
         if self.hurry():
             return max(1, normal - 1)
-        if self.mode == "slow":
+        if self.mode == "slow" or self.under_floor():
             return normal + 2
         return normal
 

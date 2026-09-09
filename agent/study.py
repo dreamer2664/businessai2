@@ -42,6 +42,8 @@ def _density(text):
 
 
 class Study:
+    last_brainstorm = ""
+
     def __init__(self, tasks, planner=None, google=None, memory=None, log=None, notify=None, viewer=None):
         self.T = tasks
         self.planner = planner
@@ -397,6 +399,7 @@ class Study:
                                     max_tokens=350, timeout=180)
         except Exception as e:
             return f"brainstorm: model error {str(e)[:60]}"
+        self.last_brainstorm = out                       # the project list picks the 3 ideas up (core.run_quiet)
         doc = library.Doc("Brainstorm " + time.strftime("%d %b %Y %H:%M"), "ideas I had during quiet time", kind="brainstorm")
         doc.summary(out, "Three things to try")
         path = doc.save("brainstorm")
