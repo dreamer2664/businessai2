@@ -42,8 +42,9 @@ class Bot:
                 except Exception:
                     out = {"ok": False, "description": f"HTTP {e.code}"}
                 break
-            except (urllib.error.URLError, TimeoutError, OSError) as e:
-                # flaky network (SSL EOF, reset, timeout): retry sends, but never retry a long poll
+            except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
+                # flaky network (SSL EOF, reset, timeout) or an unreadable reply (proxy HTML page,
+                # empty body: json/Unicode errors are ValueErrors): retry sends, but never retry a long poll
                 if method == "getUpdates" or attempt == _retries - 1:
                     raise TelegramError(f"network: {config.redact(str(e))}")
                 time.sleep(1.5 * (attempt + 1))
