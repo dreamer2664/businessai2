@@ -400,9 +400,23 @@ class Google:
         payload = {"raw": raw}
         if thread_id:
             payload["threadId"] = thread_id
-        d = self._req(f"{GMAIL}/messages/send", method="POST",
-                      data=json.dumps(payload).encode(),
-                      headers={"Content-Type": "application/json"})
+        try:
+            d = self._req(f"{GMAIL}/messages/send", method="POST",
+                          data=json.dumps(payload).encode(),
+                          headers={"Content-Type": "application/json"})
+        except GoogleError:
+            if not (thread_id or in_reply_to):
+                raise
+            for h in ("In-Reply-To", "References"):      # threading rejected → plain send; the mail must go out
+                try:
+                    del msg[h]
+                except KeyError:
+                    pass
+            raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+            d = self._req(f"{GMAIL}/messages/send", method="POST",
+                          data=json.dumps({"raw": raw}).encode(),
+                          headers={"Content-Type": "application/json"})
+            self.log("gmail_thread_fallback", to=str(to)[:60])
         self.log("gmail_sent", to=str(to)[:60], subject=str(subject)[:60])
         return d.get("id", "")
 

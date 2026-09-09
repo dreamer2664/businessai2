@@ -80,7 +80,7 @@ def fresh(allowed=("me@home.com",)):
     return g, fb, tg, lambda t: (got.append(t), f"RAN:{t[:40]}")[1], got
 
 
-def mail(mid, sender, subject, text, thread="t-" + "1", msgid="<m1@home.com>"):
+def mail(mid, sender, subject, text, thread="t-1", msgid="<m1@home.com>"):
     return {"id": mid, "from": sender, "subject": subject, "text": text, "thread": thread, "msgid": msgid}
 
 

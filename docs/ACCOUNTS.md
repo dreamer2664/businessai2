@@ -31,5 +31,5 @@ Verification codes and confirmation links come through my own Gmail
 thread, and mail I have answered is marked read + archived so the inbox stays
 clean.
 
-Offline proof: `python3 engine/scripts/score_accounts.py` (17/17 on a machine
+Offline proof: `python3 engine/scripts/score_accounts.py` (18/18 on a machine
 with a browser) · `python3 engine/scripts/score_gmail.py` (8/8).

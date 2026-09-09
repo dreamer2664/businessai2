@@ -46,12 +46,14 @@ A = Accounts(google=FakeGoogle(), log=lambda k, **f: None, notify=lambda t: note
 if os.path.exists("/tmp/bai_accounts_state/accounts.json"): os.remove("/tmp/bai_accounts_state/accounts.json"); A.data = {"accounts": []}
 check("gate: local fine / never refused / unknown real needs asking",
       A._gate("http://127.0.0.1:8098/") == (True, "ok") and A._gate("http://localhost:9/x") == (True, "ok")
+      and A._gate("file:///home/user/shop.html") == (True, "ok")
       and A._gate("https://www.paypal.com/signup")[0] is False and A._gate("https://example.com/join") == (None, "ask"))
 check("gate: allow/forget round-trip",
       A.allow_site("Example.com/join") == "example.com" and A._gate("https://example.com/join") == (True, "ok")
       and A.forget_site("https://www.example.com/") is True and A.forget_site("example.com") is False
       and A._gate("https://example.com/join") == (None, "ask"))
 check("gate: junk is not a site", A.allow_site("not a site") is None and A.allow_site("") is None)
+check("gate: money sites never approvable", A.allow_site("paypal.com") is None and A.allow_site("https://www.revolut.com/") is None)
 ok0, note0 = A.ensure_account(None, "https://example.com/join")
 check("gate: unknown real site refused with no way to ask (no browser touched)", ok0 is False and "/accounts allow" in note0, note0)
 A2 = Accounts(google=FakeGoogle(), log=lambda k, **f: None, notify=lambda t: None, ask=lambda *a: "Never")
