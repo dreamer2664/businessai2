@@ -59,3 +59,26 @@ python3 packs/trim.py ~/.cache/bai/web2/web.tsv ~/.cache/bai/ext_ops
 python3 packs/build_pack.py ~/.cache/bai/ext_ops release/packs/operations.kdw
 python3 engine/scripts/score_pack.py tests/operations.txt release/packs/operations.kdw
 ```
+
+## dropship.kdw (pack #3, night marathon item 8) — SEED (build on PC)
+
+| source | bulk in | kept | what |
+|---|---|---|---|
+| 37 dropshipping guides (dodropshipping, Shopify blog, Zendrop, AutoDS, Spocket, CJ, SaleHoo, Doba, Dropship.io, europa.eu VAT) | 0.85 M chars | 69 % | starting out, suppliers compared, winning products, margins & taxes, TikTok/FB ads, private label & POD, mistakes |
+| **total** | **0.85 M chars (~190 pages)** | **0.59 M chars, 2,181 passages** | |
+
+Seed verified in the sandbox (fetch+trim work, 36/36 questions grounded in the passages);
+the `.kdw` needs the C engine, so it builds on the PC:
+
+```sh
+python3 packs/web_fetch.py packs/sources/web_urls_dropship.tsv ~/.cache/bai/web3/web.tsv
+python3 packs/trim.py ~/.cache/bai/web3/web.tsv ~/.cache/bai/ext_dropship
+python3 packs/build_pack.py ~/.cache/bai/ext_dropship release/packs/dropship.kdw
+python3 engine/scripts/score_pack.py tests/dropship.txt release/packs/dropship.kdw
+```
+
+Growing it across sessions (the feed): `python3 packs/feed_add.py packs/sources/web_urls_dropship.tsv <ext_dir> <url>... [--topic suppliers]`
+fetches + trims + appends (renumbered aids) and extends the TSV; rebuild after. Offline proof:
+`python3 engine/scripts/score_dropship.py` (list + question + grounding + feed checks). Browser-only
+candidates for later feeds (403/thin for the plain fetcher): help.shopify.com IOSS/OSS pages,
+usadrop winning-product guide, easync beginner platforms, bigbuy.eu guides.

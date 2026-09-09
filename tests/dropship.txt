@@ -1,0 +1,50 @@
+# Dropshipping pack #3 — score set (night marathon item 8). One question per line: question<TAB>accepted answers separated by |
+# Every accepted term was verified present in the trimmed seed passages (packs/sources/web_urls_dropship.tsv, 37 guides).
+
+## Starting out
+What is dropshipping?	supplier ships|without holding inventory|no inventory|third party ships|don't hold stock
+What do you need to start dropshipping?	niche|supplier|Shopify|store|product research
+What is a dropshipping niche?	specific segment|targeted audience|specific category|focused market
+What is the difference between dropshipping and holding inventory?	no upfront inventory|supplier holds|without stock|less capital
+Why do dropshippers order samples before selling?	check quality|test quality|verify quality|quality and shipping
+
+## Suppliers
+Which platforms connect stores with US suppliers for fast shipping?	Spocket|Zendrop|Doba
+What is Zendrop best for?	beginners|branding|US fulfillment|easy to use|automated
+What is CJ Dropshipping best for?	scaling|warehouses|branding|print on demand|sourcing
+What is SaleHoo?	supplier directory|vetted suppliers|research|training
+What is AutoDS?	automation|auto-ordering|fulfillment|product research
+What does DSers do?	AliExpress|bulk ordering|bulk orders|supplier
+What is 1688?	Alibaba|Chinese|wholesale|bulk
+What is an MOQ?	minimum order|minimum quantity
+How do you spot a fake supplier?	samples|business license|upfront|reviews|contact details
+
+## Products
+What is a winning dropshipping product?	wow|problem|margins|not in stores|unique
+What margin do dropshippers aim for on a winning product?	3x|three times|markup
+What tools find trending dropshipping products?	Minea|Dropship.io|EcomHunt|spy|Google Trends|best sellers
+Why avoid selling trademarked lookalikes?	suspended|banned|policy|infringement
+What should a product cost to leave room for ads?	cheap to source|low cost|fraction|sourcing cost
+What does 'wow factor' mean for a product?	stops the scroll|need this|attention|unique
+
+## Money and EU tax
+How do you calculate a dropshipping profit margin?	cost of goods sold|selling price|gross profit|net profit|calculate
+What costs eat a dropshipping margin besides the product?	shipping|ads|fees|transaction|refunds
+What is VAT IOSS for sellers outside the EU?	Import scheme|monthly VAT return|one EU country|low-value goods
+Up to what order value does IOSS apply?	EUR 150|150
+Who handles VAT when you sell through a marketplace?	marketplace|deemed|responsible
+What is a chargeback?	dispute|reversal|card|fraud
+
+## Marketing
+Why is TikTok popular for dropshipping?	viral|creators|UGC|short video|organic
+What are UGC ads?	creator|customer videos|authentic|user-generated
+What should you test before scaling ads?	small budget|several creatives|test products|winning
+How do influencers help a new store?	trust|audience|followers|promote
+What is the first thing to fix when ads get clicks but no sales?	product page|offer|price|trust|reviews
+
+## Brand and scale
+What is private label?	own brand|your brand|manufacturer|custom packaging
+How is print on demand different from dropshipping?	custom designs|printed|your designs|no inventory either
+When should a dropshipper switch from AliExpress to an agent or warehouse?	volume|scale|consistent orders|branding
+What does white label mean?	rebrand|your own brand|generic|someone else's product
+What records should a dropshipper keep from day one?	orders|expenses|receipts|taxes|bookkeeping
