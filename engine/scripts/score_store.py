@@ -111,10 +111,10 @@ try:
     check("two proposals in the same millisecond get different ids", a["id"] != b["id"]); S.reject(a["id"]); S.reject(b["id"])
     T = Tasks()
     try:
-        T.browser(); BROWSER_OK = True
-    except Exception:
+        T.on_hands(T.browser, timeout=120); BROWSER_OK = True      # Playwright objects live on the hands thread — never open one from here
+    except Exception as e:
         BROWSER_OK = False
-        print("(no browser here — section 4 skipped; run on the PC for the full score)")
+        print(f"(no browser here — sections 4-6 skipped: {str(e)[:80]}; run on the PC for the full score)")
     if BROWSER_OK:
         # 4. the AI reads its own store like any shop (needs a browser)
         F = ShopFacts(tasks=T, log=lambda k, **f: None)

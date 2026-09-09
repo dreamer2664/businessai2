@@ -212,6 +212,7 @@ if HAS_PW:
             b.open("file://" + os.path.abspath(BASE + name))
             out[name] = b.page.content()
         stealth_ok = True
+        b.close(); T._browser = None          # one sync Playwright per thread: close the first before opening the stealth one
         try:
             os.environ["BAI_STEALTH"] = "1"
             b2 = Browser(log=lambda kind, **f: None)

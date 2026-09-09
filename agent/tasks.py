@@ -249,8 +249,8 @@ class Tasks:
                     if FORUM.search(r["url"]) or r["url"] in q_of:
                         continue
                     dom = urllib.parse.urlparse(r["url"]).netloc.lower()
-                    if sum(1 for u in q_of if urllib.parse.urlparse(u).netloc.lower() == dom) >= 2:
-                        continue
+                    if dom and sum(1 for u in q_of if urllib.parse.urlparse(u).netloc.lower() == dom) >= 2:
+                        continue                       # at most 2 pages per site (file:// pages have no site — never capped)
                     try:
                         b.open(r["url"])
                         st = b.status()
