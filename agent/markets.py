@@ -124,15 +124,56 @@ def _money(x):
 
 
 def _text_of(html):
+    import html as _h
     txt = re.sub(r"<script[^>]*>.*?</script>", " ", html, flags=re.S | re.I)
     txt = re.sub(r"<[^>]+>", " ", txt)
-    return re.sub(r"\s+", " ", txt).strip()
+    return re.sub(r"\s+", " ", _h.unescape(txt).replace("\xa0", " ")).strip()
 
 
 # ---- Vinted --------------------------------------------------------------------------
 
+_CARD_TITLE = re.compile(r'<a[^>]+href="([^"]*/items/\d+[^"]*)"[^>]*\btitle="([^"]+)"', re.I)
+_CARD_TITLE2 = re.compile(r'<a[^>]+\btitle="([^"]+)"[^>]*href="([^"]*/items/\d+[^"]*)"', re.I)
+
+
+def _card_from_label(label):
+    """'Zapatillas Nike, Brand: Nike Air, Condizioni: Ottime, Taglia: 42, 21.00 €, 22.75 €' → dict.
+    Also the accessibility flavour: 'Nike AF1, brand: Nike, condizioni: Ottime, taglia: 43, €80.00, €84.70 include la Protezione acquisti'."""
+    label = _html_unescape(label)
+    d = {"title": label.split(",")[0].strip()[:120], "price": None, "total": None, "brand": "", "size": "", "condition": ""}
+    m = re.search(r"\b(?:brand|marca)\s*:\s*([^,]+)", label, re.I)
+    if m:
+        d["brand"] = m.group(1).strip()[:60]
+    m = re.search(r"\b(?:condizioni|condition|stato)\s*:\s*([^,]+)", label, re.I)
+    if m:
+        d["condition"] = vinted_condition(m.group(1).strip())
+    m = re.search(r"\b(?:taglia|size)\s*:\s*([^,]+)", label, re.I)
+    if m:
+        d["size"] = m.group(1).strip()[:20]
+    prices = [_money(x) for x in re.findall(r"(?:€\s?\d[\d.,]*|\d[\d.,]*\s?€)", label)]
+    prices = [p for p in prices if p]
+    if prices:
+        d["price"] = prices[0]
+        if len(prices) > 1 and prices[1] >= prices[0]:
+            d["total"] = prices[1]
+    return d
+
+
+def _html_unescape(s):
+    import html as _h
+    return _h.unescape(s or "")
+
+
+def vinted_condition(raw):
+    """Vinted's condition words (it/en/fr/es/de) → the English scale the verdicts use."""
+    c = (raw or "").strip().lower().rstrip(".")
+    return _VINTED_COND.get(c, c[:40])
+
+
 def parse_vinted_search(html, limit=12):
-    """Catalog page → [{title, price, url}]. JSON blobs first, card markup fallback."""
+    """Catalog page → [{title, price, url, total, brand, size, condition}].
+    Three layers: embedded JSON (old Next.js pages), the current DOM cards (title attribute carries
+    brand / condition / size / price / total), then any bare /items/ link."""
     out, seen = [], set()
     for blob in _script_blobs(html):
         items = blob if isinstance(blob, list) else None
@@ -156,6 +197,24 @@ def parse_vinted_search(html, limit=12):
                     return out
     if out:
         return out
+    for m in list(_CARD_TITLE.finditer(html)) + [None]:
+        if m is None:
+            break
+        url, label = m.group(1), m.group(2)
+        if not re.search(r"(brand|marca|condizioni|condition|taglia|size)\s*:", label, re.I) and "€" not in label:
+            continue
+        url = url if url.startswith("http") else "https://www.vinted.it" + url
+        url = url.split("?")[0]
+        if url in seen:
+            continue
+        seen.add(url)
+        d = _card_from_label(label)
+        d["url"] = url
+        out.append(d)
+        if len(out) >= limit:
+            return out
+    if out:
+        return out
     for m in re.finditer(r'<a[^>]+href="((?:https://[\w.]*vinted\.\w+)?/items/[^"\']+)"[^>]*>(.*?)</a>', html, re.S | re.I):
         url = m.group(1) if m.group(1).startswith("http") else "https://www.vinted.it" + m.group(1)
         if url in seen:
@@ -170,57 +229,207 @@ def parse_vinted_search(html, limit=12):
     return out
 
 
+def parse_vinted_api(data, limit=12):
+    """/api/v2/catalog/items JSON (what the catalog page itself loads) → the same card dicts, richer:
+    seller login + id, total with buyer protection, brand, size, condition, favourites, views."""
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except Exception:
+            return []
+    items = (data or {}).get("items") if isinstance(data, dict) else None
+    out = []
+    for it in items or []:
+        if not isinstance(it, dict) or not it.get("url"):
+            continue
+        u = it.get("user") or {}
+        out.append({"title": str(it.get("title") or "")[:120], "price": _money(it.get("price")), "total": _money(it.get("total_item_price")),
+                    "url": str(it["url"]).split("?")[0], "id": it.get("id"), "brand": str(it.get("brand_title") or "")[:60], "size": str(it.get("size_title") or "")[:20],
+                    "condition": vinted_condition(it.get("status")), "seller": str(u.get("login") or "")[:40], "seller_id": u.get("id"),
+                    "favourites": it.get("favourite_count"), "views": it.get("view_count")})
+        if len(out) >= limit:
+            break
+    return out
+
+
 _VINTED_COND = {"new with tags": "new with tags", "new without tags": "new without tags", "very good": "very good",
                 "good": "good", "satisfactory": "satisfactory", "nuovo con cartellino": "new with tags",
                 "nuovo senza cartellino": "new without tags", "ottime condizioni": "very good", "buone condizioni": "good",
+                "ottime": "very good", "buone": "good", "discrete": "satisfactory", "nuovo": "new",
+                "neuf avec étiquette": "new with tags", "neuf sans étiquette": "new without tags", "très bon état": "very good", "bon état": "good", "satisfaisant": "satisfactory",
+                "nuevo con etiquetas": "new with tags", "nuevo sin etiquetas": "new without tags", "muy bueno": "very good", "bueno": "good", "aceptable": "satisfactory",
+                "neu mit etikett": "new with tags", "neu ohne etikett": "new without tags", "sehr gut": "very good", "gut": "good", "zufriedenstellend": "satisfactory",
                 "usato": "used", "used": "used"}
 
 
+def _fmt_eur(p):
+    return f"€ {p:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _rsc_stream(html):
+    """Next.js app-router pages ship their data as JS string literals in self.__next_f.push([1,"…"]).
+    Join the chunks back into one text (only the ones that can hold item data — the rest is markup)."""
+    parts = []
+    for m in re.finditer(r'self\.__next_f\.push\(\[1,"((?:[^"\\]|\\.)*)"\]\)', html, re.S):
+        raw = m.group(1)
+        if "plugins" not in raw and "feedback_reputation" not in raw and "item_id" not in raw:
+            continue
+        try:
+            parts.append(json.loads('"' + raw + '"'))
+        except Exception:
+            try:
+                parts.append(raw.encode("utf-8", "replace").decode("unicode_escape", "replace"))
+            except Exception:
+                pass
+    return "".join(parts)
+
+
+def _plugins(html):
+    """The item page's plugin list (summary, attributes, description, user_info_header, …) or []."""
+    s = _rsc_stream(html)
+    i = s.find('{"plugins":[')
+    if i < 0:
+        return []
+    obj, _ = _balanced(s, i)
+    pl = (obj or {}).get("plugins") if isinstance(obj, dict) else None
+    return [p for p in pl or [] if isinstance(p, dict) and isinstance(p.get("data"), dict)]
+
+
+_RELATIVE_AGE = re.compile(r"^(?:caricato|uploaded|ajouté|subido|hochgeladen)\s+", re.I)
+
+
 def parse_vinted_item(html):
-    """Item page → facts dict (Price, Condition, Size, Brand, Seller, Feedback, Shipping, Description)."""
+    """Item page → facts dict (Price, Total with buyer protection, Condition, Size, Brand, Colour, Seller,
+    Feedback, Listed, Shipping, Description, Availability).
+
+    Layers, in order: the current app-router page (plugins in the RSC stream + JSON-LD), the old
+    __NEXT_DATA__ item blob, then the visible text. Every value is a quote from the page."""
     facts = {}
-    for blob in _script_blobs(html):
-        item = blob.get("item") if isinstance(blob, dict) and isinstance(blob.get("item"), dict) else None
-        if item is None:
-            item = _walk(blob, ("seller", "size", "brand_title")) if isinstance(blob, (dict, list)) else None
-            if not isinstance(item, dict) or "title" not in item:
+    plugins = _plugins(html)
+    by_name = {}
+    for p in plugins:
+        by_name.setdefault(p.get("name"), p["data"])
+    if plugins:
+        d = by_name.get("attributes") or {}
+        for a in d.get("attributes") or []:
+            code, dat = a.get("code"), a.get("data") or {}
+            val = str(dat.get("value") or "").strip()
+            if not val:
                 continue
-        price = _money(item.get("price", {}).get("amount") if isinstance(item.get("price"), dict) else item.get("price"))
-        if price:
-            facts["Price"] = f"€ {price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            facts["_price"] = price
-        for k, label in (("size_title", "Size"), ("size", "Size"), ("brand_title", "Brand"), ("brand", "Brand")):
-            if item.get(k) and label not in facts:
-                facts[label] = str(item[k])[:60]
-        cond = str(item.get("status") or item.get("condition") or "").lower().strip()
-        if cond and "Condition (as listed)" not in facts:
-            facts["Condition (as listed)"] = _VINTED_COND.get(cond, cond[:40])
-        user = item.get("user") or item.get("seller") or {}
-        if isinstance(user, dict):
-            if user.get("login"):
-                facts["Seller"] = str(user["login"])[:40]
-            fb = user.get("feedback_count", user.get("feedbacks"))
-            rep = user.get("feedback_reputation") or user.get("reputation")
-            if fb or rep:
-                facts["Feedback"] = f"{fb or '?'} feedback" + (f", {float(rep) * 100:.0f}% positive" if isinstance(rep, (int, float)) else (f", {rep}" if rep else ""))
-        desc = str(item.get("description") or "")[:400]
-        if desc:
-            facts["Description"] = desc
-        if facts:
+            if code == "brand":
+                facts["Brand"] = val[:60]
+            elif code == "size":
+                facts["Size"] = val[:20]
+            elif code == "status":
+                facts["Condition (as listed)"] = vinted_condition(val)
+            elif code == "color":
+                facts["Colour"] = val[:60]
+            elif code == "upload_date":
+                facts["Listed"] = val[:40]
+            elif code in ("material",):
+                facts["Materials"] = val[:60]
+        d = by_name.get("description") or {}
+        if d.get("description"):
+            facts["Description"] = str(d["description"])[:400]
+        d = by_name.get("user_info_header") or {}
+        if d.get("name"):
+            facts["Seller"] = str(d["name"])[:40]
+            fb, rep = d.get("feedback_count"), d.get("feedback_reputation")
+            if isinstance(fb, (int, float)):
+                facts["Feedback"] = (f"{int(fb)} feedback" + (f", {float(rep) * 100:.0f}% positive" if isinstance(rep, (int, float)) and fb else "")) if fb else "no feedback yet"
+                if fb and isinstance(rep, (int, float)):
+                    facts["Rating"] = f"{float(rep) * 100:.0f}% positive"
+                facts["Reviews"] = f"{int(fb)} feedback"
+            if d.get("business"):
+                facts["Seller type"] = "business"
+        for p in plugins:                                                  # price sits in the make_offer / buy plugin data
+            pd = p["data"]
+            pr = _money(pd.get("price")) if isinstance(pd.get("price"), dict) else None
+            if pr and "Price" not in facts:
+                facts["Price"] = _fmt_eur(pr)
+                facts["_price"] = pr
+            if pd.get("seller_id") and "_seller_id" not in facts:
+                facts["_seller_id"] = str(pd["seller_id"])
+            if pd.get("item_id") and "_item_id" not in facts:
+                facts["_item_id"] = str(pd["item_id"])
+            if p.get("name") == "ask_seller":
+                if pd.get("is_reserved"):
+                    facts["Availability"] = "reserved"
+                elif pd.get("is_hidden"):
+                    facts["Availability"] = "hidden / sold"
+                elif pd.get("can_buy") is True:
+                    facts["Availability"] = "available"
+        d = by_name.get("summary") or {}
+        for line in d.get("lines") or []:
+            for el in line.get("elements") or []:
+                v = str(el.get("value") or "")
+                if _RELATIVE_AGE.match(v) and "Listed" not in facts:
+                    facts["Listed"] = _RELATIVE_AGE.sub("", v)[:40]
+    for blob in _script_blobs(html):                                       # JSON-LD Product (price, brand, description, condition)
+        if isinstance(blob, dict) and blob.get("@type") == "Product":
+            offers = blob.get("offers") or {}
+            pr = _money(offers.get("price")) if isinstance(offers, dict) else None
+            if pr and "Price" not in facts:
+                facts["Price"] = _fmt_eur(pr)
+                facts["_price"] = pr
+            if blob.get("description") and "Description" not in facts:
+                facts["Description"] = str(blob["description"])[:400]
+            br = blob.get("brand")
+            br = br.get("name") if isinstance(br, dict) else br
+            if br and "Brand" not in facts:
+                facts["Brand"] = str(br)[:60]
+            if isinstance(offers, dict) and offers.get("availability") and "Availability" not in facts:
+                facts["Availability"] = "available" if "InStock" in str(offers["availability"]) else "not available"
             break
-    if not facts:
-        txt = _text_of(html)
+    if not facts.get("_price") or "Seller" not in facts:                   # old Next.js pages: one item blob
+        for blob in _script_blobs(html):
+            item = blob.get("item") if isinstance(blob, dict) and isinstance(blob.get("item"), dict) else None
+            if item is None:
+                item = _walk(blob, ("seller", "size", "brand_title")) if isinstance(blob, (dict, list)) else None
+                if not isinstance(item, dict) or "title" not in item:
+                    continue
+            price = _money(item.get("price", {}).get("amount") if isinstance(item.get("price"), dict) else item.get("price"))
+            if price and "Price" not in facts:
+                facts["Price"] = _fmt_eur(price)
+                facts["_price"] = price
+            for k, label in (("size_title", "Size"), ("size", "Size"), ("brand_title", "Brand"), ("brand", "Brand")):
+                if item.get(k) and label not in facts:
+                    facts[label] = str(item[k])[:60]
+            cond = str(item.get("status") or item.get("condition") or "").lower().strip()
+            if cond and "Condition (as listed)" not in facts:
+                facts["Condition (as listed)"] = vinted_condition(cond)
+            user = item.get("user") or item.get("seller") or {}
+            if isinstance(user, dict):
+                if user.get("login") and "Seller" not in facts:
+                    facts["Seller"] = str(user["login"])[:40]
+                fb = user.get("feedback_count", user.get("feedbacks"))
+                rep = user.get("feedback_reputation") or user.get("reputation")
+                if (fb or rep) and "Feedback" not in facts:
+                    facts["Feedback"] = f"{fb or '?'} feedback" + (f", {float(rep) * 100:.0f}% positive" if isinstance(rep, (int, float)) else (f", {rep}" if rep else ""))
+            desc = str(item.get("description") or "")[:400]
+            if desc and "Description" not in facts:
+                facts["Description"] = desc
+            if facts:
+                break
+    txt = _text_of(html)
+    if not facts.get("_price"):
         from .sellers import price_of
         p = price_of(txt)
         if p:
-            facts["Price"] = f"€ {p:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            facts["Price"] = _fmt_eur(p)
             facts["_price"] = p
-        for label, pat in (("Size", r"\b(?:size|taglia|size\s+eu)\s*:?\s*([A-Z0-9/]{1,8})"),
-                           ("Brand", r"\b(?:brand|marca)\s*:?\s*([A-Z][A-Za-z0-9 .&'\-]{1,30})")):
+    if "Size" not in facts or "Brand" not in facts:
+        for label, pat in (("Size", r"\b(?:size|taglia|size\s+eu)\s*:?\s*([A-Z0-9/]{1,8})\b"),
+                           ("Brand", r"\b(?:brand|marca)\s*:?\s*([A-Z][A-Za-z0-9 .&'\-]{1,30}?)(?=\s+(?:Menu|Taglia|Size|Condizioni|Condition)\b|[.,·]|$)")):
             m = re.search(pat, txt, re.I)
-            if m:
+            if m and label not in facts:
                 facts[label] = m.group(1).strip()
-    ship = re.search(r"(vinted (?:go|shipping)[^.\n]{0,50}|spedizione (?:tracciata|standard)[^.\n]{0,50}|shipping:\s*[^.]{2,60})", _text_of(html), re.I)
+    if facts.get("_price"):
+        m = re.search(r"(\d[\d.,]*)\s?€\s*(?:include la protezione acquisti|includes? buyer protection|incl\.)", txt, re.I)
+        tot = _money(m.group(1)) if m else None
+        if tot and tot >= facts["_price"]:
+            facts["Total with buyer protection"] = _fmt_eur(tot)
+    ship = re.search(r"(vinted (?:go|shipping)[^.\n]{0,50}|spedizione (?:tracciata|standard)[^.\n]{0,50}|shipping:\s*[^.]{2,60}|spedizione da\s*\d[\d.,]*\s?€|shipping from\s*€?\s?\d[\d.,]*\s?€?)", txt, re.I)
     if ship and "Shipping" not in facts:
         facts["Shipping"] = ship.group(1).strip()[:80]
     return facts
@@ -452,7 +661,7 @@ SEARCH = {"vinted": (vinted_search_url, parse_vinted_search), "subito": (subito_
 ITEM = {"vinted": parse_vinted_item, "subito": parse_subito_item}
 
 
-def search_market(b, site, query, limit=8, throttle=None):
+def search_market(b, site, query, limit=8, throttle=None, price_to=None):
     """Open the marketplace's own search and parse its cards. Returns (cards, note).
 
     Never raises for site behaviour (walls, empties → ([], note)); BrowserError
@@ -461,6 +670,8 @@ def search_market(b, site, query, limit=8, throttle=None):
         raise ValueError(f"unknown marketplace: {site}")
     th = throttle or THROTTLE
     url, parse = SEARCH[site][0](query), SEARCH[site][1]
+    if price_to and site == "vinted":
+        url += f"&price_to={float(price_to):g}&currency=EUR"
     th.wait(url)
     try:
         b.open(url)
@@ -475,6 +686,10 @@ def search_market(b, site, query, limit=8, throttle=None):
         host = Throttle.host_of(url)
         keep_going = th.punish(host)
         return [], f"{site}: {st} wall — backed off" + ("" if keep_going else "; leaving it alone for now")
+    if site == "vinted":                                              # the page's own JSON is richer (seller, total, condition)
+        cards = vinted_search_api(b, query, limit, price_to=price_to, throttle=th)
+        if cards:
+            return cards, ""
     try:
         html = b.page.content()
     except Exception:
@@ -508,3 +723,126 @@ def read_item(b, site, url, throttle=None):
         return ITEM[site](b.page.content()), ""
     except Exception as e:
         return {}, f"parse failed: {str(e)[:80]}"
+
+
+# ---- Vinted's own JSON (what the page loads for itself; same cookies, same politeness) --------------
+
+VINTED_API = "https://www.vinted.it/api/v2"
+
+
+def vinted_api(b, path, params=None, throttle=None):
+    """GET one Vinted API path through the browser context (it holds the anonymous access cookie the
+    catalog page set). Read-only, throttled like a page hit. Returns parsed JSON or None — never raises.
+    401/403/429 count as a wall (back-off), so a cranky site is left alone quickly."""
+    th = throttle or THROTTLE
+    url = VINTED_API + path + ("?" + urllib.parse.urlencode(params) if params else "")
+    th.wait(url)
+    try:
+        req = getattr(getattr(b, "page", None), "request", None) or getattr(getattr(b, "_ctx", None), "request", None)
+        if req is None:
+            return None
+        r = req.get(url, headers={"Accept": "application/json"}, timeout=20000)
+        if r.status != 200:
+            if r.status in (401, 403, 429):
+                th.punish(Throttle.host_of(url))
+            return None
+        return r.json()
+    except Exception:
+        return None
+
+
+def vinted_search_api(b, query, limit=8, price_to=None, order="relevance", throttle=None):
+    """Catalog search via the page's own JSON: richer cards (seller, total, condition, size). [] when unavailable."""
+    params = {"search_text": query, "order": order, "per_page": min(max(limit, 1), 40), "page": 1, "currency": "EUR"}
+    if price_to:
+        params["price_to"] = f"{float(price_to):g}"
+    data = vinted_api(b, "/catalog/items", params, throttle)
+    return parse_vinted_api(data, limit) if data else []
+
+
+def vinted_user_facts(user):
+    """/users/{id} JSON → facts the verdict can quote (location, feedback split, activity, verification)."""
+    u = (user or {}).get("user") if isinstance(user, dict) and "user" in user else user
+    if not isinstance(u, dict):
+        return {}
+    f = {}
+    city, country = str(u.get("city") or "").strip(), str(u.get("country_title") or "").strip()
+    if city or country:
+        f["Seller location"] = ", ".join(x for x in (city, country) if x)[:60]
+    if country:
+        f["Ships from / origin"] = country[:40]
+    fb = u.get("feedback_count")
+    if isinstance(fb, (int, float)):
+        fb = int(fb)
+        rep = u.get("feedback_reputation")
+        pos, neg = u.get("positive_feedback_count"), u.get("negative_feedback_count")
+        if fb:
+            f["Feedback"] = f"{fb} feedback" + (f", {float(rep) * 100:.0f}% positive" if isinstance(rep, (int, float)) else "") + (f" ({pos} 👍 / {neg} 👎)" if isinstance(pos, int) and isinstance(neg, int) else "")
+            if isinstance(rep, (int, float)):
+                f["Rating"] = f"{float(rep) * 100:.0f}% positive"
+        else:
+            f["Feedback"] = "no feedback yet"
+        f["Reviews"] = f"{fb} feedback"
+    if isinstance(u.get("item_count"), int):
+        f["Items for sale"] = str(u["item_count"])
+    if u.get("last_loged_on_ts"):
+        f["Last active"] = str(u["last_loged_on_ts"])[:10]
+    if u.get("business"):
+        f["Seller type"] = "business (Vinted Pro)"
+    ver = u.get("verification") or {}
+    if isinstance(ver, dict):
+        ok = [k for k, v in ver.items() if isinstance(v, dict) and v.get("valid")]
+        if ok:
+            f["Verified"] = ", ".join(sorted(ok))[:60]
+    if u.get("is_on_holiday"):
+        f["Availability note"] = "seller on holiday"
+    return f
+
+
+def vinted_feedback_text(data, limit=12):
+    """/user_feedbacks JSON → what buyers wrote, one line each ('5/5: fast, as described'); system lines skipped."""
+    rows = (data or {}).get("user_feedbacks") if isinstance(data, dict) else None
+    out = []
+    for r in rows or []:
+        if not isinstance(r, dict) or r.get("system_feedback") or r.get("is_system_comment"):
+            continue
+        txt = str(r.get("feedback") or "").strip()
+        rating = r.get("rating")
+        if txt or rating:
+            out.append((f"{rating}/5: " if rating else "") + txt[:200])
+        if len(out) >= limit:
+            break
+    return "\n".join(out)
+
+
+def vinted_shipping_facts(data):
+    d = (data or {}).get("shipping_details") if isinstance(data, dict) else None
+    if not isinstance(d, dict):
+        return {}
+    if d.get("pickup_only"):
+        return {"Shipping": "pickup only"}
+    if d.get("free_shipping"):
+        return {"Shipping": "free"}
+    p = _money(d.get("price"))
+    return {"Shipping": f"from {_fmt_eur(p)}"} if p else {}
+
+
+def vinted_seller(b, seller_id, throttle=None):
+    """The seller behind a listing, from Vinted's own data: (facts, feedback text). Both empty when the API is shy."""
+    if not seller_id:
+        return {}, ""
+    facts = vinted_user_facts(vinted_api(b, f"/users/{seller_id}", throttle=throttle))
+    text = vinted_feedback_text(vinted_api(b, "/user_feedbacks", {"user_id": seller_id, "per_page": 12, "page": 1}, throttle)) if facts else ""
+    return facts, text
+
+
+def vinted_enrich(b, facts, throttle=None):
+    """After parse_vinted_item: add seller + shipping facts from the API, return the buyers' words for the verdict."""
+    extra, text = vinted_seller(b, facts.get("_seller_id"), throttle)
+    for k, v in extra.items():
+        if k in ("Feedback", "Rating", "Reviews") or k not in facts:
+            facts[k] = v
+    if facts.get("_item_id") and ("Shipping" not in facts or re.search(r"\b0[.,]00\b", facts["Shipping"])):   # "da 0,00 €" is the logged-out placeholder
+        facts.update(vinted_shipping_facts(vinted_api(b, f"/items/{facts['_item_id']}/shipping_details", throttle=throttle)))
+    facts["_marketplace"] = "vinted"
+    return text

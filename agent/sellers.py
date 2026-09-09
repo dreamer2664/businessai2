@@ -135,19 +135,28 @@ def reliability(facts, reviews_text, social_hits, age_hint=""):
     mrc = re.match(r"(\d[\d.,]*)", rc)
     if mrc:
         n = int(re.sub(r"\D", "", mrc.group(1)) or 0)
-        (pros if n >= 50 else cons).append(f"{n} reviews" if n >= 50 else f"few reviews ({n})")
+        enough = 20 if facts.get("_marketplace") else 50               # a private second-hand seller with 20+ feedbacks is seasoned
+        (pros if n >= enough else cons).append(f"{n} reviews" if n >= enough else f"few reviews ({n})")
     if n_bad >= 3 and n_bad > n_good:
         cons.append(f"{n_bad} complaint words in what buyers wrote (quality, delivery, refunds)")
     elif n_good >= 3:
         pros.append(f"buyers mention: {', '.join(dict.fromkeys(m.lower() for m in PRAISE.findall(txt)[:3]))}")
+    marketplace = bool(facts.get("_marketplace"))
     if social_hits:
         pros.append("has a public social page: " + ", ".join(sorted({h['platform'] for h in social_hits})))
-    else:
+    elif not marketplace:                                              # a private Vinted seller has no shop Instagram — not a mark against them
         cons.append("no social media page found")
     if "Ships from / origin" not in facts:
         cons.append("shipping origin not stated")
-    if "Materials" not in facts:
+    if "Materials" not in facts and not marketplace:
         cons.append("materials not stated")
+    if marketplace:
+        if facts.get("Feedback") == "no feedback yet":
+            cons.append("brand-new seller, no feedback yet")
+        if "Verified" in facts and len(facts["Verified"].split(",")) >= 2:
+            pros.append(f"verified via {facts['Verified']}")
+        if facts.get("Availability") in ("reserved", "hidden / sold"):
+            cons.append(f"listing is {facts['Availability']}")
     if facts.get("Shipping", "").lower() in ("free", "gratis", "gratuita"):
         pros.append("free shipping")
     if age_hint:
@@ -213,7 +222,7 @@ class SellerCheck:
         if self.viewer:
             self.viewer.plan_step(i, note)
 
-    def candidates(self, b, product, n=5, extra_queries=(), sites=()):
+    def candidates(self, b, product, n=5, extra_queries=(), sites=(), price_to=None):
         """Search results that look like listings/shops (not articles/forums).
         sites (from the brief: the owner named them) are searched directly first, politely."""
         queries = [f"{product} buy", f"{product} price shipping", *extra_queries]
@@ -224,7 +233,7 @@ class SellerCheck:
             if s in ("vinted", "subito") and len(out) < n:
                 q = re.sub(r"\s+(on|su)\s+(vinted|subito(?:\.it)?|ebay(?:\.it)?|amazon(?:\.it)?|etsy|wallapop|depop|aliexpress|temu|facebook marketplace|zalando|kleinanzeigen|leboncoin)(\s*(,|and|e|or|o)\s*(vinted|subito(?:\.it)?|ebay(?:\.it)?|amazon(?:\.it)?|etsy|wallapop|depop|aliexpress|temu|facebook marketplace|zalando|kleinanzeigen|leboncoin))*\b", " ", product).strip()
                 try:
-                    cards, note = markets.search_market(b, s, q or product, n - len(out), self.throttle)
+                    cards, note = markets.search_market(b, s, q or product, n - len(out), self.throttle, price_to=price_to)
                 except BrowserError as e:
                     self.log("market_search_failed", site=s, error=str(e)[:80])
                     continue
@@ -285,7 +294,12 @@ class SellerCheck:
             try:
                 deep = (markets.parse_vinted_item if "vinted." in host else markets.parse_subito_item)(b.page.content())
                 for k, v in deep.items():
-                    facts.setdefault(k, v)
+                    if k in ("Price", "_price", "Shipping", "Seller", "Feedback", "Rating", "Reviews", "Condition (as listed)") or k not in facts:
+                        facts[k] = v                                     # the structured page data beats the regex guess
+                if "vinted." in host:
+                    buyers = markets.vinted_enrich(b, facts, self.throttle)
+                    if buyers:
+                        facts["_buyers"] = buyers
             except Exception as e:
                 self.log("deep_facts_failed", error=str(e)[:80])
         img = None
@@ -300,7 +314,7 @@ class SellerCheck:
         socials = [s for s in socials if not re.search(r"/(sharer|share|intent|dialog|plugins|widgets|embed)", s["url"], re.I)]
         seen = set()
         socials = [s for s in socials if not (s["platform"] in seen or seen.add(s["platform"]))][:4]
-        return {"url": url, "title": title, "text": text[:12000], "facts": facts, "image": img, "seller": seller_name(text, url, title), "socials": socials}
+        return {"url": url, "title": title, "text": text[:12000], "facts": facts, "image": img, "seller": facts.get("Seller") or seller_name(text, url, title), "socials": socials}
 
     def _fetch_image(self, b, src, max_bytes=250000):
         """Download the picture through the browser (same cookies), shrink it to ≤ 480 px JPEG when Pillow is around."""
@@ -500,7 +514,7 @@ class SellerCheck:
                     product = host if (host and not host.startswith(("127.", "localhost")) and "." in host) else (os.path.basename(urllib.parse.urlparse(cands[0]["url"]).path).rsplit(".", 1)[0] or "the shop you sent")
             else:
                 self._step(0, f"searching for {product}")
-                cands = self.candidates(b, product, n_eff, sites=sites)
+                cands = self.candidates(b, product, n_eff, sites=sites, price_to=constraints.get("max"))
             if not cands:
                 return None, f"I couldn't find listings for {product} (search engines walled or nothing matched).", []
             for i, c in enumerate(cands):
@@ -519,7 +533,11 @@ class SellerCheck:
                              note=L.get("note") or f"page behind a {L['wall']} wall — could not read it")
                     options.append(L)
                     continue
-                if not (self.pace and self.pace.hurry()):
+                if L["facts"].get("_buyers"):                              # marketplace feedback already read from the site's own data
+                    self._step(2, f"reading {L['seller']}'s feedback")
+                    L["reviews"] = L["facts"]["_buyers"]
+                    L.setdefault("review_sources", []).append("Vinted feedback on the seller's profile")
+                elif not (self.pace and self.pace.hurry()):
                     self._step(2, f"reading what buyers say about {L['seller']}")
                     L["reviews"] = self.read_reviews(b, L, product)
                     if L.get("socials"):
@@ -588,7 +606,8 @@ class SellerCheck:
                 note += ("\n" if note else "") + "Reviews read at: " + ", ".join(L["review_sources"][:2])
             doc.option(L.get("seller") or L.get("title", "?"), L["url"], price=L["facts"].get("Price", ""), image=L.get("image"), verdict=L["verdict"], grade=L["grade"],
                        facts=facts, pros=L.get("pros"), cons=L.get("cons"), note=note)
-        doc.section("How I judged", "Price, shipping and origin are quoted from each listing page. Reliability comes from the rating and review counts on the page, "
+        doc.section("How I judged", ("On Vinted the seller's location, feedback split and the last feedback lines come from the seller's own public profile. " if any(L["facts"].get("_marketplace") == "vinted" for L in options) else "") +
+                                    "Price, shipping and origin are quoted from each listing page. Reliability comes from the rating and review counts on the page, "
                                     "complaint/praise words in what buyers wrote, whether the seller has a public social page, and (when my eyes are on) whether the photo "
                                     "matches the description. Nothing was bought, no account was used.")
         path = doc.save(f"{product}-sellers")

@@ -1,0 +1,37 @@
+{
+ "user": {
+  "id": 3100000001,
+  "login": "venditore_demo",
+  "country_id": 7,
+  "about": "",
+  "profile_url": "https://www.vinted.it/member/3100000001-venditore_demo",
+  "feedback_count": 47,
+  "feedback_reputation": 0.9787,
+  "positive_feedback_count": 46,
+  "negative_feedback_count": 1,
+  "neutral_feedback_count": 0,
+  "item_count": 12,
+  "given_item_count": 3,
+  "taken_item_count": 51,
+  "city": "Milano",
+  "country_title": "Italia",
+  "country_code": "IT",
+  "last_loged_on_ts": "2026-09-09T19:07:50+02:00",
+  "business": false,
+  "is_on_holiday": false,
+  "verification": {
+   "email": {
+    "valid": true
+   },
+   "facebook": {
+    "valid": false
+   },
+   "google": {
+    "valid": true
+   }
+  },
+  "avg_response_time": null,
+  "total_items_count": 12
+ },
+ "code": 0
+}

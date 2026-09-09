@@ -1,0 +1,101 @@
+{
+ "items": [
+  {
+   "id": 9945588959,
+   "title": "Nike air max tailwind 6",
+   "price": {
+    "amount": "15.0",
+    "currency_code": "EUR"
+   },
+   "total_item_price": {
+    "amount": "16.45",
+    "currency_code": "EUR"
+   },
+   "brand_title": "Nike Air",
+   "size_title": "42.5",
+   "status": "Discrete",
+   "url": "https://www.vinted.it/items/9945588959-nike-air-max-tailwind-6",
+   "path": "/items/9945588959-nike-air-max-tailwind-6",
+   "user": {
+    "id": 3100000000,
+    "login": "seller_0",
+    "profile_url": "https://www.vinted.it/member/3100000000-seller_0"
+   },
+   "favourite_count": 0,
+   "view_count": 0,
+   "photo": {
+    "url": "https://images1.vinted.net/t/04_0016e_ynp9mNU5DNujexgS571VurXo/f800/1788975950.jpeg?s=049d0bc4bb4e4227ee75d8fba478e1d2db6aa8e7"
+   },
+   "item_box": {
+    "accessibility_label": "Nike air max tailwind 6, brand: Nike Air, condizioni: Discrete, taglia: 42.5, €15.00, €16.45 include la Protezione acquisti"
+   }
+  },
+  {
+   "id": 9945567414,
+   "title": "Nike Air Force 1",
+   "price": {
+    "amount": "80.0",
+    "currency_code": "EUR"
+   },
+   "total_item_price": {
+    "amount": "84.7",
+    "currency_code": "EUR"
+   },
+   "brand_title": "Nike Air",
+   "size_title": "43",
+   "status": "Ottime",
+   "url": "https://www.vinted.it/items/9945567414-nike-air-force-1",
+   "path": "/items/9945567414-nike-air-force-1",
+   "user": {
+    "id": 3100000001,
+    "login": "seller_1",
+    "profile_url": "https://www.vinted.it/member/3100000001-seller_1"
+   },
+   "favourite_count": 0,
+   "view_count": 0,
+   "photo": {
+    "url": "https://images1.vinted.net/t/02_002c8_R3Mfy4doZ8HF6jLdaA2x6Ni4/f800/1788975847.jpeg?s=12784dd280d258b049dc4fbe9695497cb6bafd52"
+   },
+   "item_box": {
+    "accessibility_label": "Nike Air Force 1, brand: Nike Air, condizioni: Ottime, taglia: 43, €80.00, €84.70 include la Protezione acquisti"
+   }
+  },
+  {
+   "id": 9945573967,
+   "title": "Zapatillas Nike Air max",
+   "price": {
+    "amount": "21.0",
+    "currency_code": "EUR"
+   },
+   "total_item_price": {
+    "amount": "22.75",
+    "currency_code": "EUR"
+   },
+   "brand_title": "Nike Air",
+   "size_title": "42",
+   "status": "Ottime",
+   "url": "https://www.vinted.it/items/9945573967-zapatillas-nike-air-max",
+   "path": "/items/9945573967-zapatillas-nike-air-max",
+   "user": {
+    "id": 3100000002,
+    "login": "seller_2",
+    "profile_url": "https://www.vinted.it/member/3100000002-seller_2"
+   },
+   "favourite_count": 0,
+   "view_count": 0,
+   "photo": {
+    "url": "https://images1.vinted.net/t/06_025cb_hDcsvDajNB69GJnLAiscG3nS/f800/1788975878.jpeg?s=8888ddb932f2f25788feedf0617a1ff737551216"
+   },
+   "item_box": {
+    "accessibility_label": "Zapatillas Nike Air max, brand: Nike Air, condizioni: Ottime, taglia: 42, €21.00, €22.75 include la Protezione acquisti"
+   }
+  }
+ ],
+ "pagination": {
+  "current_page": 1,
+  "total_pages": 48,
+  "total_entries": 960,
+  "per_page": 20
+ },
+ "code": 0
+}

@@ -1,0 +1,43 @@
+{
+ "user_feedbacks": [
+  {
+   "id": 1,
+   "created_at_ts": "2026-09-08T19:25:01+02:00",
+   "item_id": 1,
+   "feedback": "Tutto perfetto, spedizione veloce, consigliato!",
+   "rating": 5,
+   "system_feedback": false
+  },
+  {
+   "id": 2,
+   "created_at_ts": "2026-09-01T10:00:00+02:00",
+   "item_id": 2,
+   "feedback": "As described, well packed.",
+   "rating": 5,
+   "system_feedback": false
+  },
+  {
+   "id": 3,
+   "created_at_ts": "2026-08-20T10:00:00+02:00",
+   "item_id": 3,
+   "feedback": "Arrived quickly",
+   "rating": 4,
+   "system_feedback": false
+  },
+  {
+   "id": 4,
+   "created_at_ts": "2026-08-10T10:00:00+02:00",
+   "item_id": 4,
+   "feedback": "Ordine completato automaticamente",
+   "rating": 5,
+   "system_feedback": true
+  }
+ ],
+ "pagination": {
+  "current_page": 1,
+  "total_pages": 10,
+  "total_entries": 47,
+  "per_page": 5
+ },
+ "code": 0
+}

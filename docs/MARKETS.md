@@ -5,6 +5,40 @@ that marketplace directly instead of going through a search engine — then read
 each listing deeply: price, size, brand, condition, seller + feedback, shipping,
 description. Everything is read-only: I never buy, bid, message sellers, or log in.
 
+## Vinted: confident coverage (measured live 2026-09-09)
+
+What I measured, politely (4 s gaps, ~10 hits total): Vinted serves its catalog and item
+pages to a plain visitor (200, DataDome present but not challenging a normal headless
+Chromium), and the page loads its own JSON (`/api/v2/catalog/items`, `/users/{id}`,
+`/user_feedbacks`, `/items/{id}/shipping_details`) with the anonymous cookie the first
+page-view sets. Their robots.txt allows `/` and `/items` for everyone; `ai-input=yes`,
+`ai-train=no` — I read, quote and link, I never train on it.
+
+So a Vinted job now reads, in order:
+
+1. **Search** — the catalog page opens in the browser (status check for walls), then the
+   same search through the page's own JSON: title, price, **total with buyer protection**,
+   brand, size, condition, seller login. Your `max € N` goes into the search itself.
+   If the JSON is shy (401/403/429 → back-off), the 2026 DOM cards are parsed instead
+   (the `title` attribute carries brand / condition / size / prices); old-layout JSON and
+   bare links remain as the last fallbacks.
+2. **Item** — the app-router page (`self.__next_f.push` stream) → attributes (brand, size,
+   condition, colour, material, upload age), description, seller name + feedback count,
+   price, availability (reserved / hidden), plus JSON-LD; text fallback for everything.
+3. **Seller** — `/users/{id}`: city + country (**ships from**), feedback split (👍/👎,
+   % positive), items for sale, last active, verified via (email/google/facebook), holiday,
+   Pro/business flag. Then the last 12 feedback lines, which become "what buyers say".
+4. **Shipping** — `/items/{id}/shipping_details` when the page shows the logged-out
+   placeholder ("da 0,00 €").
+
+Verdicts know it is a marketplace: a private seller gets no "no social page" / "no
+materials" penalty, 20+ feedbacks count as seasoned, "no feedback yet" and
+reserved/sold listings are flagged. Condition words in it/en/fr/es/de map to one scale.
+
+Live result (sandbox, 40 s, 3 listings): every fact above filled for all three sellers,
+buyers' words quoted, the € 20 limit applied. Fixtures for the tests are the real pages
+captured that day with sellers anonymised (`tests/market/vinted_*_live.html`, `vinted_*.json`).
+
 ## Politeness (always on)
 
 - At least **4 seconds** between hits on the same site.
@@ -33,5 +67,5 @@ or log in on my live screen and I'll read it with you. No bypass is ever attempt
   tests below catch it.
 - eBay/Amazon/Etsy/depop/wallapop: generic reading only (no deep reader yet).
 
-Offline proof: `python3 engine/scripts/score_markets.py` (17/17 anywhere,
-20/20 where a browser is installed) · `timeout 280 python3 engine/scripts/score_sellers.py` (34/34, PC).
+Offline proof: `python3 engine/scripts/score_markets.py` (31/31 anywhere,
+34/34 where a browser is installed) · `timeout 280 python3 engine/scripts/score_sellers.py` (34/34, PC).

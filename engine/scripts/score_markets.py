@@ -1,8 +1,9 @@
 """Score item 3: deep Vinted/subito readers, Facebook waters-only, throttle, stealth/proxy.
 
-17 checks run anywhere (parsers over fixtures + a fake browser for the wiring);
+30 checks run anywhere (parsers over fixtures + a fake browser for the wiring);
 3 need a real browser (PC). No live marketplace is ever touched by the tests.
 """
+import json
 import os
 import re
 import sys
@@ -47,6 +48,35 @@ check("vinted item: deep facts", vi.get("_price") == 18.5 and vi.get("Size") == 
 vi_fb = M.parse_vinted_item(nojson(fix("vinted_item.html")))
 check("vinted item: text fallback", vi_fb.get("_price") == 18.5 and vi_fb.get("Size") == "42"
       and vi_fb.get("Brand") == "CorkStep", str(vi_fb))
+
+# ---- pure: Vinted, 2026 layout (app-router page, captured live 2026-09-09, seller anonymised) --------
+lc = M.parse_vinted_search(fix("vinted_search_live.html"))
+check("vinted 2026 search: DOM cards carry title/price/total/brand/size/condition", len(lc) == 3 and lc[0]["title"] == "Zapatillas Nike Air max"
+      and lc[0]["price"] == 21.0 and lc[0]["total"] == 22.75 and lc[0]["brand"] == "Nike Air" and lc[0]["size"] == "42"
+      and lc[0]["condition"] == "very good" and lc[1]["condition"] == "good" and lc[0]["url"] == "https://www.vinted.it/items/9945573967-zapatillas-nike-air-max", str(lc[:1]))
+li = M.parse_vinted_item(fix("vinted_item_live.html"))
+check("vinted 2026 item: RSC plugins → price/total/size/brand/condition/colour/seller/feedback/availability",
+      li.get("_price") == 21.0 and li.get("Total with buyer protection") == "€ 22,75" and li.get("Size") == "42" and li.get("Brand") == "Nike Air"
+      and li.get("Condition (as listed)") == "very good" and li.get("Colour") == "Nero, Blu" and li.get("Seller") == "venditore_demo"
+      and li.get("Feedback") == "no feedback yet" and li.get("Availability") == "available" and li.get("_seller_id") == "3100000001"
+      and li.get("_item_id") == "9945573967" and "Spedizione da 4,39" in li.get("Shipping", "") and li.get("Listed") == "2 min fa", str(li))
+li_fb = M.parse_vinted_item(nojson(fix("vinted_item_live.html")))
+check("vinted 2026 item: text fallback still finds price/size/brand", li_fb.get("_price") == 21.0 and li_fb.get("Size") == "42"
+      and li_fb.get("Brand") == "Nike Air", str(li_fb))
+ac = M.parse_vinted_api(fix("vinted_api.json"))
+check("vinted API cards: seller/total/condition/size, urls cleaned", len(ac) == 3 and ac[0]["seller"] == "seller_0" and ac[0]["total"] == 16.45
+      and ac[0]["condition"] == "satisfactory" and ac[1]["condition"] == "very good" and ac[0]["size"] == "42.5" and "?" not in ac[0]["url"], str(ac[:1]))
+uf = M.vinted_user_facts(json.loads(fix("vinted_user.json")))
+check("vinted seller facts: location/origin/feedback split/rating/verified", uf.get("Seller location") == "Milano, Italia" and uf.get("Ships from / origin") == "Italia"
+      and uf.get("Feedback") == "47 feedback, 98% positive (46 👍 / 1 👎)" and uf.get("Rating") == "98% positive" and uf.get("Reviews") == "47 feedback"
+      and uf.get("Verified") == "email, google" and uf.get("Items for sale") == "12", str(uf))
+ft = M.vinted_feedback_text(json.loads(fix("vinted_feedbacks.json")))
+check("vinted feedback text: buyers' words, system lines skipped", ft.count("\n") == 2 and "5/5: Tutto perfetto" in ft and "automaticamente" not in ft, repr(ft))
+sf = M.vinted_shipping_facts(json.loads(fix("vinted_shipping.json")))
+check("vinted shipping facts", sf == {"Shipping": "from € 1,95"} and M.vinted_shipping_facts({"shipping_details": {"pickup_only": True}}) == {"Shipping": "pickup only"}
+      and M.vinted_shipping_facts({"shipping_details": {"free_shipping": True}}) == {"Shipping": "free"}, str(sf))
+check("vinted condition words (it/fr/es/de) → one scale", M.vinted_condition("Ottime") == "very good" and M.vinted_condition("Nuovo con cartellino") == "new with tags"
+      and M.vinted_condition("Très bon état") == "very good" and M.vinted_condition("Discrete") == "satisfactory" and M.vinted_condition("Sehr gut") == "very good", "")
 
 # ---- pure: subito ------------------------------------------------------------------
 scards = M.parse_subito_search(fix("subito_search.html"))
@@ -138,6 +168,8 @@ class FakeBrowser:
         self.opened.append(url)
         if "vinted.it/catalog" in url:
             self.html = fix("vinted_search.html")
+        elif "vinted.it/items/9945573967" in url:
+            self.html = fix("vinted_item_live.html")
         elif "vinted.it/items" in url:
             self.html = fix("vinted_item.html")
         elif "subito.it/annunci" in url:
@@ -173,6 +205,40 @@ class FakeBrowser:
     def search_results(self, query, limit=10):
         return []
 
+    class _Resp:
+        def __init__(self, status, body):
+            self.status, self._body = status, body
+
+        def json(self):
+            return json.loads(self._body)
+
+    class _Req:
+        def __init__(self, outer):
+            self.outer = outer
+
+        def get(self, url, headers=None, timeout=None):
+            self.outer.api_calls.append(url)
+            if self.outer.api_status != 200:
+                return FakeBrowser._Resp(self.outer.api_status, "{}")
+            if "/catalog/items" in url:
+                return FakeBrowser._Resp(200, fix("vinted_api.json"))
+            if "/user_feedbacks" in url:
+                return FakeBrowser._Resp(200, fix("vinted_feedbacks.json"))
+            if "/users/" in url:
+                return FakeBrowser._Resp(200, fix("vinted_user.json"))
+            if "/shipping_details" in url:
+                return FakeBrowser._Resp(200, fix("vinted_shipping.json"))
+            return FakeBrowser._Resp(404, "{}")
+
+    api_status = 200
+    api_calls = None
+
+    @property
+    def request(self):
+        if self.api_calls is None:
+            self.api_calls = []
+        return FakeBrowser._Req(self)
+
 
 S = SellerCheck(tasks=None, log=lambda kind, **f: None)
 S.throttle = Throttle(gap=0, sleep=lambda s: None)
@@ -186,6 +252,34 @@ fb2 = FakeBrowser()
 L = S.read_listing(fb2, "https://www.vinted.it/items/123-cork-slippers-42-like-new")
 check("sellers: deep facts merged on vinted pages", L.get("facts", {}).get("Size") == "42"
       and L.get("facts", {}).get("Brand") == "CorkStep" and "47" in L.get("facts", {}).get("Feedback", ""), str(L.get("facts")))
+fb4 = FakeBrowser()
+S.throttle = Throttle(gap=0, sleep=lambda s: None)
+cands4 = S.candidates(fb4, "nike air max on vinted", n=3, sites=["vinted"])
+check("sellers: vinted search uses the page's own JSON first (seller + total per card)", len(cands4) == 3 and any("/api/v2/catalog/items" in u for u in fb4.api_calls)
+      and cands4[0]["url"] == "https://www.vinted.it/items/9945588959-nike-air-max-tailwind-6", f"{len(cands4)} {fb4.api_calls[:1]}")
+fb5 = FakeBrowser()
+L5 = S.read_listing(fb5, "https://www.vinted.it/items/9945573967-zapatillas-nike-air-max")
+f5 = L5.get("facts", {})
+check("sellers: 2026 vinted listing → seller facts from the API (location, 47 feedback, verified) + buyers' words",
+      L5.get("seller") == "venditore_demo" and f5.get("Seller location") == "Milano, Italia" and f5.get("Ships from / origin") == "Italia"
+      and f5.get("Feedback", "").startswith("47 feedback, 98% positive") and f5.get("Rating") == "98% positive" and "Tutto perfetto" in f5.get("_buyers", "")
+      and f5.get("_marketplace") == "vinted" and f5.get("_price") == 21.0 and f5.get("Total with buyer protection") == "€ 22,75"
+      and any("/users/3100000001" in u for u in fb5.api_calls) and any("/user_feedbacks" in u for u in fb5.api_calls), str({k: v for k, v in f5.items() if k != "Description"}))
+from agent.sellers import reliability
+g5, v5, p5, c5 = reliability(f5, f5.get("_buyers", ""), [])
+check("sellers: a seasoned private Vinted seller grades good (no social/materials penalty, 47 feedback, 98%)", g5 == "good" and "no social media page found" not in c5
+      and "materials not stated" not in c5 and any("47 reviews" in p for p in p5), f"{g5} {p5} {c5}")
+fresh = dict(f5, Feedback="no feedback yet", Rating="", Reviews="0 feedback", Availability="reserved")
+g6, _, p6, c6 = reliability(fresh, "", [])
+check("sellers: a brand-new seller with a reserved listing is flagged", g6 != "good" and any("no feedback yet" in c for c in c6) and any("reserved" in c for c in c6), f"{g6} {c6}")
+fb6 = FakeBrowser()
+fb6.api_status = 401
+th6 = Throttle(gap=0, sleep=lambda s: None)
+cards6, note6 = M.search_market(fb6, "vinted", "nike air max", 3, throttle=th6)
+check("sellers: API 401 → back-off recorded, DOM cards still used", len(cards6) == 3 and th6.failures("https://www.vinted.it/") == 1 and note6 == "", f"{len(cards6)} {th6.failures('https://www.vinted.it/')} {note6}")
+fb7 = FakeBrowser()
+S.candidates(fb7, "ciabatte sughero", n=3, sites=["vinted"], price_to=20)
+check("sellers: owner's max € goes into the vinted search itself (price_to)", any("price_to=20" in u for u in fb7.api_calls) and any("price_to=20" in u for u in fb7.opened), f"{fb7.api_calls[:1]} {fb7.opened[:1]}")
 fb3 = FakeBrowser()
 Lf = S.read_listing(fb3, "https://www.facebook.com/marketplace/item/1")
 walled = FakeBrowser(status="captcha")
