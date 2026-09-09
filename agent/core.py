@@ -85,7 +85,7 @@ Forward me any customer message (or write /customer <their text>) → I draft th
 while I work: "status" / "what are you doing" · "why" · "hurry up" · "stop" · a change ("only Italy") · a new request (queued) — no need to wait
 /lessons — what I learned from my last jobs (I reflect after every one) · /thinking — what is on my mind right now
 /ideas — business ideas I jotted from short videos (/ideas <topic> = go watch some now) · /study [topic] — find and keep a good PDF in my library
-/accounts — the site accounts I created with my own e-mail (I sign up when a task needs it and tell you in one line; never money sites)
+/accounts — the site accounts I created with my own e-mail (I sign up when a task needs it and tell you in one line; never money sites) · /accounts allow <site>
 /library — the documents I've written (seller checks, research, comparisons); they also land in my Drive folder
 /screen · /watch on|off — see my browser · /status · /selftest
 Browsing is read-only: I never log in, pass CAPTCHAs, buy or post. Money, public posts and customer messages will always need your OK."""
@@ -928,6 +928,12 @@ class Agent:
         if low.startswith("/library"):
             return library.list_text(10) + ("\n\nDrive folder: " + self.google.folder_link() if self.google.connected() else "")
         if low.startswith("/accounts") or low.startswith("/account"):
+            arg = re.sub(r"^/accounts?\s*", "", low).strip()
+            if arg.startswith("allow "):
+                site = self.accounts.allow_site(arg[6:])
+                return f"\u2705 {site} approved — I'll sign up there when a task needs it." if site else "That doesn't look like a site (e.g. /accounts allow vinted.it)."
+            if arg.startswith("forget "):
+                return f"\U0001F6AB {arg[7:]} forgotten — no more sign-ups there." if self.accounts.forget_site(arg[7:]) else "That site wasn't on my approved list."
             return self.accounts.list_text()
         if low.startswith("/google") or re.fullmatch(r"(please )?(connect|link|reconnect|set ?up) (to )?(my |your )?google( drive| account)?( please)?", low.strip(" .!")):
             return self.google_command(text[7:].strip() if low.startswith("/google") else "connect")

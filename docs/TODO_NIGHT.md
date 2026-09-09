@@ -15,7 +15,7 @@ build on `night/marathon`, merge per item only when the full battery holds.
 - [ ] 3. Marketplace scrapers — Vinted + subito.it deep, Facebook waters-only; stealth, back-off, proxy support — 20%
 - [x] 4. YouTube trending + top comments (owner: browser-first, NO key — API locked anyway) — 7%
 - [x] 5. Google Docs layouts (core writer live-verified; per-type templates ride with item 2) — native Docs API tables/styles per report type — 8%
-- [ ] 6. Gmail mastery + safe-signup training (fakes first, real signups only on owner-approved sites) — 8%
+- [x] 6. Gmail mastery + safe-signup training (fakes first, real signups only on owner-approved sites) — 8% DONE (gmail 8/8, accounts 17/17, fallback 17/17)
 - [x] 7. Time budgets + priority queue (High=scrape, Medium=log, Low=brainstorm) + duration parsing — 8%
 - [x] 8. Pack #3 dropshipping/business feed + tests/dropship.txt (seed tonight, grow across sessions) — 10%
 - [x] 9. Viewer reasoning upgrade — thinking panel for owner + agent — 6% DONE (think 12/12)
@@ -32,3 +32,4 @@ build on `night/marathon`, merge per item only when the full battery holds.
 - 2026-09-09 0x:x UTC: item 4 DONE (youtube 12/12 + live, battery green) — merged to main. Heartbeat 62%. Next: item 8 (pack #3).
 - 2026-09-09 0x:x UTC: item 8 DONE (seed 10/10, build on PC) — merged to main. Heartbeat 72%. Next: item 9 (viewer thinking panel).
 - 2026-09-09 0x:x UTC: item 9 DONE (Mind think_snapshot/thinking_text → viewer #think panel + /thinking; think 12/12, battery green) — merged to main. Heartbeat 78%. Next: items 6/3.
+- 2026-09-09 0x:x UTC: item 6 DONE (threaded Gmail replies + read/archive tidy + from: code search; approval gate + /accounts allow/forget + --drill; battery green) — merged to main. Heartbeat 86%. Next: item 3 (marketplace scrapers).

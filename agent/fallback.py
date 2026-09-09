@@ -168,9 +168,17 @@ class Fallback:
                     "(sent to Telegram — tap there to continue)") + \
                 "\n\n— sent by the fallback channel. If Telegram is down, just reply to this mail."
             try:
-                self.google.send_mail(sender, f"{REPLY_PREFIX} {subject[:60] or 'hello'}", body)
+                self.google.send_mail(sender, f"{REPLY_PREFIX} {subject[:60] or 'hello'}", body,
+                                      thread_id=m.get("thread") or None, in_reply_to=m.get("msgid") or None)
                 handled.append((sender, subject[:60], len(body)))
                 self.log("fallback_out", sender=sender[:60], chars=len(body))
+                for tidy in ("mark_read", "archive"):      # answered mail leaves no unread trace (best-effort)
+                    try:
+                        fn = getattr(self.google, tidy, None)
+                        if fn:
+                            fn(mid)
+                    except Exception:
+                        pass
             except Exception as e:
                 self.log("fallback_send_failed", error=str(e)[:160])
         return handled
