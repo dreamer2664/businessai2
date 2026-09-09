@@ -34,7 +34,8 @@ python3 - <<'EOF' 2>&1 | grep -v '^{"t"'
 import sys, json, time
 sys.path.insert(0, ".")
 from agent.google import Google
-g = Google(); print("google connected:", g.connected())
+g = Google(); print("google connected:", g.connected(), "| account:", g.account() or "?")
+print("token scopes:", " ".join(x.rsplit("/", 1)[-1] for x in (g.token.get("scope") or "").split()) or "(none recorded)", "| token age (days):", round((time.time() - g.token.get("t", 0)) / 86400, 1) if g.token.get("t") else "?")
 try:
     print("drive folder:", g.folder_link())
 except Exception as e:
