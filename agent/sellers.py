@@ -14,6 +14,7 @@ import urllib.parse
 
 from .browser import BrowserError
 from . import library
+from . import markets
 
 MARKETPLACES = re.compile(r"amazon\.|ebay\.|etsy\.|vinted\.|aliexpress\.|temu\.|wish\.|subito\.it|zalando\.|asos\.|shein\.|alibaba\.|dhgate\.|walmart\.|bol\.com|cdiscount\.|manomano\.|leroymerlin\.|ikea\.", re.I)
 FORUM = re.compile(r"reddit\.com|quora\.com|youtube\.com|tiktok\.com|instagram\.com|pinterest\.|x\.com|twitter\.com|facebook\.com|linkedin\.com|wikipedia\.org|wikihow", re.I)
@@ -205,18 +206,36 @@ class SellerCheck:
         self.pace = pace
         self.eyes = eyes
         self.live_change = ""            # the owner's mid-job words ("only sellers that ship from italy") — read before judging
+        self.throttle = markets.Throttle()   # one polite pace for every marketplace (item 3)
 
     # ---- steps ---------------------------------------------------------------------
     def _step(self, i, note=""):
         if self.viewer:
             self.viewer.plan_step(i, note)
 
-    def candidates(self, b, product, n=5, extra_queries=()):
-        """Search results that look like listings/shops (not articles/forums)."""
+    def candidates(self, b, product, n=5, extra_queries=(), sites=()):
+        """Search results that look like listings/shops (not articles/forums).
+        sites (from the brief: the owner named them) are searched directly first, politely."""
         queries = [f"{product} buy", f"{product} price shipping", *extra_queries]
         if re.search(r"\b(used|second ?hand|usato|vinted)\b", product, re.I):
             queries.insert(0, f"{product} vinted OR ebay OR subito")
         seen, out = set(), []
+        for s in sites or ():
+            if s in ("vinted", "subito") and len(out) < n:
+                q = re.sub(r"\s+(on|su)\s+(vinted|subito(?:\.it)?|ebay(?:\.it)?|amazon(?:\.it)?|etsy|wallapop|depop|aliexpress|temu|facebook marketplace|zalando|kleinanzeigen|leboncoin)(\s*(,|and|e|or|o)\s*(vinted|subito(?:\.it)?|ebay(?:\.it)?|amazon(?:\.it)?|etsy|wallapop|depop|aliexpress|temu|facebook marketplace|zalando|kleinanzeigen|leboncoin))*\b", " ", product).strip()
+                try:
+                    cards, note = markets.search_market(b, s, q or product, n - len(out), self.throttle)
+                except BrowserError as e:
+                    self.log("market_search_failed", site=s, error=str(e)[:80])
+                    continue
+                if note:
+                    self.log("market_search_note", site=s, note=note[:100])
+                for c in cards:
+                    if c["url"] not in seen:
+                        seen.add(c["url"])
+                        out.append({"url": c["url"], "title": c["title"]})
+            elif s not in ("vinted", "subito"):
+                self.log("market_skipped", site=s, reason="waters-only" if "facebook" in s else "no deep reader yet")
         for q in queries:
             if len(out) >= n:
                 break
@@ -257,6 +276,18 @@ class SellerCheck:
         text = b.extract_text()
         title = (b.page.title() or "")[:120]
         facts = extract_facts(text, url)
+        host = urllib.parse.urlparse(url).netloc.lower()
+        if "facebook.com" in host:                                    # waters-only: probe, never wade in
+            verdict, note = markets.facebook_probe(b.page.content(), st)
+            if verdict != "ok":
+                return {"url": url, "wall": "login" if verdict == "login" else verdict, "note": note}
+        elif "vinted." in host or "subito.it" in host:                # deep facts fill what the generic pass missed
+            try:
+                deep = (markets.parse_vinted_item if "vinted." in host else markets.parse_subito_item)(b.page.content())
+                for k, v in deep.items():
+                    facts.setdefault(k, v)
+            except Exception as e:
+                self.log("deep_facts_failed", error=str(e)[:80])
         img = None
         try:
             d = b.page.evaluate(_JS_MAIN_IMAGE) or {}
@@ -450,7 +481,7 @@ class SellerCheck:
                 cons.append(f"origin not stated — you wanted {c['from']}")
         return cons
 
-    def run(self, product, n=4, want_doc=True, counterfeit_note=""):
+    def run(self, product, n=4, want_doc=True, counterfeit_note="", sites=()):
         """Returns (document path, summary text, options list). Runs on the hands thread (caller uses T.on_hands)."""
         t0 = time.time()
         options = []
@@ -469,7 +500,7 @@ class SellerCheck:
                     product = host if (host and not host.startswith(("127.", "localhost")) and "." in host) else (os.path.basename(urllib.parse.urlparse(cands[0]["url"]).path).rsplit(".", 1)[0] or "the shop you sent")
             else:
                 self._step(0, f"searching for {product}")
-                cands = self.candidates(b, product, n_eff)
+                cands = self.candidates(b, product, n_eff, sites=sites)
             if not cands:
                 return None, f"I couldn't find listings for {product} (search engines walled or nothing matched).", []
             for i, c in enumerate(cands):
@@ -484,7 +515,8 @@ class SellerCheck:
                     self.log("listing_failed", url=c["url"], error=str(e)[:80])
                     continue
                 if L.get("wall"):
-                    L.update(title=c["title"], facts={}, seller=urllib.parse.urlparse(c["url"]).netloc, socials=[], text="", note=f"page behind a {L['wall']} wall — could not read it")
+                    L.update(title=c["title"], facts={}, seller=urllib.parse.urlparse(c["url"]).netloc, socials=[], text="",
+                             note=L.get("note") or f"page behind a {L['wall']} wall — could not read it")
                     options.append(L)
                     continue
                 if not (self.pace and self.pace.hurry()):

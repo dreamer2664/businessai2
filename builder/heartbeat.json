@@ -1,6 +1,6 @@
 {
  "branch": "night/marathon",
- "pct": 86,
+ "pct": 100,
  "rows": [
   [
    "0",
@@ -24,7 +24,7 @@
    "3",
    "Marketplace scrapers (Vinted / subito / FB)",
    "20",
-   "queued"
+   "DONE (markets 20/20: deep Vinted/subito, FB waters-only, throttle/stealth/proxy)"
   ],
   [
    "4",
@@ -70,8 +70,8 @@
   ]
  ],
  "latest": [
-  "Item 9 done: thinking panel live (why/status/queue/lessons) + /thinking.",
-  "Item 6 done: threaded Gmail replies + read/archive tidy; sign-ups need approval (/accounts allow), --drill trains on fakes.",
-  "Battery 19/19, 0 FAIL. Next: item 3 (marketplace scrapers) \u2014 the last one."
+  "Item 3 done: Vinted/subito read deeply, Facebook waters-only, polite throttle + optional stealth/proxy.",
+  "Battery 20/20, 0 FAIL. Main green.",
+  "MARATHON COMPLETE \u2014 all 10 items shipped. Remaining: owner setup (Google token on PC, fallback secrets)."
  ]
 }

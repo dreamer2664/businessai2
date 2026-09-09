@@ -114,7 +114,16 @@ class Browser:
             want_headed = os.environ.get("BAI_HEADED", "").lower() in ("1", "true", "yes") or bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
             headless = not want_headed
         self._pw = sync_playwright().start()
-        launch = dict(args=["--disable-gpu", "--no-sandbox"] + self.LEAN_ARGS + (["--in-process-gpu"] if headless else []))
+        from . import markets as _markets      # lazy: markets imports BrowserError from this module
+        stealth = _markets.stealth_enabled()
+        proxy = _markets.proxy_config()
+        args = ["--disable-gpu", "--no-sandbox"] + self.LEAN_ARGS + (["--in-process-gpu"] if headless else [])
+        if stealth:
+            args += _markets.STEALTH_ARGS
+        launch = dict(args=args)
+        if proxy:
+            launch["proxy"] = proxy
+            self.log("browser_proxy", server=proxy["server"])
         try:
             self._browser = self._pw.chromium.launch(headless=headless, slow_mo=0 if headless else 250, **launch)
         except Exception as e:
@@ -124,9 +133,12 @@ class Browser:
             headless = True
             self._browser = self._pw.chromium.launch(headless=True, **launch)
         self.headless = headless
-        self._ctx = self._browser.new_context(viewport={"width": 1280, "height": 900}, locale="en-US",
-                                              user_agent=("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                                                          "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"))
+        ua = _markets.pick_ua() if stealth else ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                                                             "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+        self._ctx = self._browser.new_context(viewport={"width": 1280, "height": 900}, locale="en-US", user_agent=ua)
+        if stealth:
+            self._ctx.add_init_script(_markets.STEALTH_INIT)
+            self.log("browser_stealth", ua=ua[:60])
         self._ctx.set_default_timeout(20000)
         self.lean = lean
         if lean:                                   # small machines: no pictures, videos or web fonts — the text is what I read anyway
