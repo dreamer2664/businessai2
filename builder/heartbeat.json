@@ -1,0 +1,77 @@
+{
+ "branch": "night/marathon",
+ "pct": 26,
+ "rows": [
+  [
+   "0",
+   "Google connected (Drive + Gmail read + send)",
+   "\u2014",
+   "DONE"
+  ],
+  [
+   "1",
+   "Fallback contact (Gmail + backup bot)",
+   "12",
+   "DONE (14/14 offline, live test at setup)"
+  ],
+  [
+   "2",
+   "Smarter research",
+   "14",
+   "queued"
+  ],
+  [
+   "3",
+   "Marketplace scrapers (Vinted / subito / FB)",
+   "20",
+   "queued"
+  ],
+  [
+   "4",
+   "YouTube trending + comments",
+   "7",
+   "queued"
+  ],
+  [
+   "5",
+   "Google Docs layouts",
+   "8",
+   "DONE (native writer live-verified, report types with item 4)"
+  ],
+  [
+   "6",
+   "Gmail mastery + safe signups",
+   "8",
+   "queued"
+  ],
+  [
+   "7",
+   "Time budgets + priority queue",
+   "8",
+   "queued"
+  ],
+  [
+   "8",
+   "Pack #3 dropshipping feed",
+   "10",
+   "queued"
+  ],
+  [
+   "9",
+   "Viewer reasoning upgrade",
+   "6",
+   "queued"
+  ],
+  [
+   "10",
+   "Heartbeat system + regression battery",
+   "7",
+   "heartbeat live (HTML path), battery per item"
+  ]
+ ],
+ "latest": [
+  "Fallback contact built: Gmail two-way + backup bot + watchdog (14/14).",
+  "Full regression matches main baselines \u2014 zero regressions.",
+  "Next: merge item-1 slice to main, then item 10 (YouTube)."
+ ]
+}

@@ -14,7 +14,7 @@ LOG_DIR = STATE_DIR / "logs"
 
 _SECRET_KEYS = ("GITHUB_TOKEN", "GH_TOKEN", "TELEGRAM_BOT_TOKEN", "OPENAI_API_KEY",
                 "GROQ_API_KEY", "GOOGLE_API_KEY", "SHOPIFY_TOKEN", "MAIL_PASSWORD", "META_PAGE_TOKEN", "BAI_LLM_KEY",
-                "BAI_ACCOUNT_PASSWORD", "GMAIL_APP_PASSWORD")
+                "BAI_ACCOUNT_PASSWORD", "GMAIL_APP_PASSWORD", "FALLBACK_BOT_TOKEN")
 
 
 def load_env(path=SECRETS_FILE):
@@ -38,6 +38,9 @@ load_env()
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_OWNER_USERNAME = os.environ.get("TELEGRAM_OWNER_USERNAME", "").lstrip("@").lower()
 TELEGRAM_OWNER_ID = int(os.environ.get("TELEGRAM_OWNER_ID", "0") or 0)
+
+OWNER_EMAILS = os.environ.get("OWNER_EMAILS", "")
+FALLBACK_BOT_TOKEN = os.environ.get("FALLBACK_BOT_TOKEN", "")
 
 # Knowledge brain (the C engine from kdr-brain). Optional at milestone 0.
 BRAIN_BIN = os.environ.get("BAI_BRAIN_BIN", str(ROOT / "release" / "kdr-brain-lite"))
