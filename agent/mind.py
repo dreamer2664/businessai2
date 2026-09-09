@@ -369,6 +369,10 @@ class Mind:
             elif kind in ("task_wall", "search_engine_skip"):
                 self._act(f"{self._host(f.get('url')) or f.get('engine')}: {f.get('wall') or f.get('reason')} wall")
                 self.snag(f"{f.get('url') or f.get('engine')}: {f.get('wall') or f.get('reason')} wall")
+            elif kind == "research_widen":
+                bits = [f"{k} {v}" for k, v in f.items() if v and v not in (False, 0, "0") and k != "second"] + ([f"2nd engine {f['second']}"] if f.get("second") else [])
+                self._act("widened: " + (", ".join(bits) if bits else "nothing new")[:80])
+                self._doing_quiet("looking in more places (time left)")
             elif kind == "captcha_passed":
                 self._act("solved a checkbox CAPTCHA")
                 self._doing_quiet("solved a checkbox CAPTCHA")

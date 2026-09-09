@@ -17,6 +17,7 @@ Commands (Browser methods): open(url), tabs(), switch(i), close_tab(i), read(),
 find(text), click(n), type(n, text, enter=False), scroll(dir), back(), forward(),
 screenshot(path), search(query), links(), extract_text(), download_text(url).
 """
+import base64
 import json
 import os
 import re
@@ -255,6 +256,30 @@ class Browser:
                "duckduckgo": "https://html.duckduckgo.com/html/?q={q}"}
     ENGINE_HOSTS = re.compile(r"brave\.com|yahoo\.com|bing\.com|duckduckgo|/search\?|admarketplace|r\.search\.|/ct\?", re.I)
 
+    engine_used = None                  # which engine answered the last search() — None when they all failed
+
+    def other_engines(self):
+        """The engines that did NOT answer the last search — a second opinion comes from a different index."""
+        return [e for e in self.ENGINES if e != self.engine_used]
+
+    @staticmethod
+    def unwrap(href):
+        """Engines wrap result links (bing /ck/a?u=a1<base64>, yahoo r.search.yahoo.com/…/RU=<url>/…): give back the real URL."""
+        try:
+            p = urllib.parse.urlparse(href)
+            if p.netloc.endswith("bing.com") and p.path.startswith("/ck/"):
+                u = urllib.parse.parse_qs(p.query).get("u", [""])[0]
+                if u.startswith("a1"):
+                    s = u[2:]
+                    return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4)).decode("utf-8", "replace")
+            if p.netloc.endswith("r.search.yahoo.com"):
+                m = re.search(r"/RU=([^/]+)/", href)
+                if m:
+                    return urllib.parse.unquote(m.group(1))
+        except Exception:
+            pass
+        return href
+
     def search(self, query, engine=None):
         """Web search; returns the results page as text (links numbered). Tries the engines in turn and
         moves on when one shows a bot check or returns no results (headless visitors are often challenged)."""
@@ -274,20 +299,26 @@ class Browser:
         return last
 
     def _organic(self, limit=10):
-        out, seen = [], set()
-        for l in self.links(150):
-            h = l.get("href") or ""
-            if not h.startswith("http") or self.ENGINE_HOSTS.search(h) or h in seen:
+        out, by_url = [], {}
+        for l in self.links(200):
+            h = self.unwrap(l.get("href") or "")
+            if not h.startswith("http") or self.ENGINE_HOSTS.search(h):
                 continue
-            seen.add(h)
-            out.append({"n": l["n"], "title": re.sub(r"^\S+ \S+ › .*?  ", "", l["text"])[:90], "url": h})
+            title = re.sub(r"^\S+ \S+ › .*?  ", "", l["text"] or "")[:90]
+            if h in by_url:                                  # bing lists the site name and the title as two links → keep the longer label
+                if len(title) > len(by_url[h]["title"]):
+                    by_url[h]["title"] = title
+                continue
             if len(out) >= limit:
-                break
+                continue
+            by_url[h] = {"n": l["n"], "title": title, "url": h}
+            out.append(by_url[h])
         return out
 
-    def search_results(self, query, limit=10):
-        """Structured results: [{n, title, url}] with the search engine's own links filtered out."""
-        self.search(query)
+    def search_results(self, query, limit=10, engine=None):
+        """Structured results: [{n, title, url}] with the search engine's own links filtered out.
+        engine=None → the usual order (brave first); engine="bing" → that one only (a second opinion)."""
+        self.search(query, engine=engine)
         return self._organic(limit)
 
     # ---- reading -------------------------------------------------------

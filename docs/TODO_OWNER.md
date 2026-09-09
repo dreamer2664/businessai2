@@ -73,3 +73,8 @@ Reality check on 2026-09-09 with the real browser:
   raw pack fetches > 14 d, model log capped at 2 MB, step journal at 2 000 lines; pip cache too when space is low),
   never the library / notes / models / browser; `/status` has a disk line; `/disk` explains, `/disk clean` acts;
   below 2 GB free the owner is told once a day. Sandbox today: 19 GB free; release 83 MB, state 1.8 MB, cache 369 MB. disk 10/10.
+- 2026-09-10 (later): Google is back (the owner made a new Desktop-app client; project businessai was suspended and reinstated by
+  Google on 9 Sep — the old client stayed disabled). Progress-Doc entries 7 + 8 posted. **Multi-source search shipped**: when a job has
+  time left the research widens to a second engine, the shipping/price/spec pages inside the sites, Wikipedia and the most-watched
+  YouTube video, and says so in the reply (research 30/30, sources 18/18). PC needs the pull line + `connect google` there (tokens are
+  per machine). Still open from the owner's list: smarter scraper (fewer walls first, then a fuller listing card).

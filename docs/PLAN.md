@@ -260,3 +260,19 @@ VERSION 2.0 (2026-09-08): the shop grows extras and a designer — discount code
 
 ## 2026-09-09 night marathon, item 8 (pack #3 seed) — done
 - 37 verified dropshipping guides (fetch filtered 60 candidates) → 2,181 passages, 0.59M chars, 69% kept. tests/dropship.txt 36 questions, 36/36 grounded in passages. packs/feed_add.py grows packs across sessions (renumbered aids). Term index (5,321 terms, 42KB) makes grounding re-checkable offline. score_dropship 10/10. .kdw build + score_pack run on the PC (needs the C engine).
+
+## 2026-09-10 — multi-source search (owner: "more places to search when time is left, other websites/engines, navigate sources better") — done
+- research() keeps its normal path (3 angles, brave first) when the pace is normal or hurried. When the clock says there is time
+  (slow mode, an "at least N hours" floor, or > 10 min of quiet-time budget) it **widens**, in this order and within 4 extra pages:
+  (1) the base question to a second engine that did not answer the first time (`Browser.other_engines()`; bing/yahoo result links are
+  unwrapped to the real URL — before, bing results were dropped as engine links), (2) the facts page inside each good site
+  (`sources.deep_links`: shipping / prices / specs / wholesale first, then FAQ / reviews / returns — one per site, login/cart/social
+  never), (3) the Wikipedia article when one really belongs to the topic (lookalikes rejected), (4) the most-watched YouTube video with
+  transcript sentences when captions exist. Each extra source is a normal (title, url, key sentences) row, so the brief, the synthesis,
+  the document and the memory note all carry it; the reply ends with "Widened because there was time: …" and the footer names the engine.
+- Also: a site that walled twice in this job is skipped from then on (some sites wall one path only — the walls test has that case);
+  the mind journal shows "widened: …" as a step act.
+- Live check (sandbox, slow pace, "cork phone case wholesale europe"): 6 pages in 96 s — brave 3 + yahoo 2 + Wikipedia + YouTube; etsy walled once, skipped after.
+- Bing/DDG walls in the sandbox: bing serves geo-random results to a headless visitor (its results for "bamboo toothbrush supplier europe" were BambooHR, Greek postcodes),
+  html.duckduckgo shows its "anomaly" page — both are kept last in the order, and a second opinion from them is only worth 2 pages by design.
+- score_research 19 → 30, new score_sources 18/18 (both offline, in score_all). No other score moved.

@@ -1,10 +1,11 @@
-"""Score item 2: query planner + multi-source + synthesis. Offline (fake browser). 19 checks."""
+"""Score item 2: query planner + multi-source + synthesis + widening when time is left. Offline (fake browser). 30 checks."""
 import contextlib
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+from agent import sources
 from agent.browser import BrowserError
 from agent.tasks import Tasks
 
@@ -34,6 +35,18 @@ TEXTS = {
         "Cheap lamps in germany cost around 29 euros, so prices in germany are higher than the 19 euros we pay at home."),
 }
 
+TEXTS.update({
+    "https://shop-a.com/shipping": ("Shipping — Shop A",
+        "Shipping for cheap lamps is free above 50 euros and every lamp order leaves within 2 days, so cheap lamps arrive in 3 to 5 days."),
+    "https://bing-only.com/lamps": ("Lamps Bing Found",
+        "Cheap lamps sold here are 22 euros and the cheap lamps ship from Poland in 4 days, which is typical for the EU."),
+})
+RESULTS_BING = {"cheap lamps": ["https://bing-only.com/lamps", "https://shop-a.com/lamp", "https://shop-b.com/lamp"]}
+LINKS = {"https://shop-a.com/lamp": [{"text": "Shipping & delivery", "href": "https://shop-a.com/shipping"},
+                                     {"text": "Login", "href": "https://shop-a.com/login"},
+                                     {"text": "Facebook", "href": "https://facebook.com/shopa"},
+                                     {"text": "Prices", "href": "https://other-site.com/prices"}]}
+
 RESULTS = {
     "cheap lamps": ["https://shop-a.com/lamp", "https://shop-b.com/lamp", "https://reddit.com/r/x"],
     "cheap lamps price": ["https://shop-b.com/lamp", "https://price-c.com/compare"],
@@ -53,10 +66,20 @@ class FakeB:
     def title(self):
         return TEXTS.get(self.cur, ("", ""))[0]
 
-    def search_results(self, q, n):
-        self.queries.append(q)
+    engine_used = "brave"
+
+    def other_engines(self):
+        return ["bing", "duckduckgo"]
+
+    def links(self, limit=60):
+        return LINKS.get(self.cur, [])[:limit]
+
+    def search_results(self, q, n, engine=None):
+        self.queries.append((q, engine) if engine else q)
         if self.fail:
             raise BrowserError("down")
+        if engine == "bing":
+            return [{"url": u} for u in RESULTS_BING.get(q, [])[:n]]
         if "germany" in q.lower():
             return [{"url": "https://extra-e.com/de"}]
         return [{"url": u} for u in RESULTS.get(q, [])[:n]]
@@ -81,8 +104,8 @@ class FakeMem:
 
 
 class FakePace:
-    def __init__(self, hurry=False, over=False):
-        self._hurry, self._over = hurry, over
+    def __init__(self, hurry=False, over=False, mode="normal", floor=False, budget=None):
+        self._hurry, self._over, self.mode, self._floor, self._budget = hurry, over, mode, floor, budget
 
     def hurry(self):
         return self._hurry
@@ -92,6 +115,33 @@ class FakePace:
 
     def should_stop(self):
         return False
+
+    def under_floor(self):
+        return self._floor
+
+    def budget_left(self):
+        return self._budget
+
+
+class NoNet:
+    """Wikipedia/YouTube answers without the network (the real helpers are exercised by score_sources)."""
+    def __init__(self, wiki=True, yt=True):
+        self.calls = []
+        self.wiki, self.yt = wiki, yt
+
+    def __enter__(self):
+        self._w, self._y = sources.wikipedia, sources.youtube
+        sources.wikipedia = lambda t, lang="en", timeout=8: (self.calls.append(("wiki", t, lang)) or
+            ({"title": "Wikipedia: Lamp", "url": "https://en.wikipedia.org/wiki/Lamp",
+              "text": "A lamp is a device that produces light. Cheap lamps are usually made of plastic and cost less than 30 euros."} if self.wiki else None))
+        sources.youtube = lambda t, with_transcript=True: (self.calls.append(("yt", t)) or
+            ({"title": "YouTube: Best cheap lamps 2026 (LampGuy, 120.000 views)", "url": "https://www.youtube.com/watch?v=abcdefghijk",
+              "text": "so today we test cheap lamps and the first one costs 19 euros which is really cheap lamps for the money and it broke after two weeks so cheap lamps are not always the best deal",
+              "views": 120000, "channel": "LampGuy"} if self.yt else None))
+        return self
+
+    def __exit__(self, *a):
+        sources.wikipedia, sources.youtube = self._w, self._y
 
 
 class RT(Tasks):
@@ -252,6 +302,120 @@ def _():
     s = "Cheap lamps are the easiest win for a rental flat, and this sentence is long enough to survive any filter we apply."
     lines = Tasks._synthesize([("t", "https://a.com/1", [s, s]), ("t", "https://b.com/2", [s])])
     assert sum(1 for ln in lines if "easiest win" in ln) == 1, lines
+
+
+# ---- widening when time is left (owner: "more places to search when time is left") ------------------------------
+
+@check("widen: normal pace does NOT widen (no second engine, no wiki/yt calls)")
+def _():
+    with NoNet() as nn:
+        t, fb, _ = fresh(pace=FakePace())
+        out = t.research("cheap lamps")
+    assert not nn.calls and not any(isinstance(q, tuple) for q in fb.queries) and "Widened" not in out, (nn.calls, fb.queries)
+
+
+@check("widen: slow pace → second engine asked the base question")
+def _():
+    with NoNet():
+        t, fb, _ = fresh(pace=FakePace(mode="slow"))
+        out = t.research("cheap lamps")
+    assert ("cheap lamps", "bing") in fb.queries, fb.queries
+    assert "bing-only.com" in out and "second opinion from bing (1 page)" in out, out[-500:]
+
+
+@check("widen: floor (at least N hours) and quiet budget > 10 min also widen; 5-min budget does not")
+def _():
+    with NoNet():
+        t1, fb1, _ = fresh(pace=FakePace(floor=True)); t1.research("cheap lamps")
+        t2, fb2, _ = fresh(pace=FakePace(budget=30 * 60)); t2.research("cheap lamps")
+        t3, fb3, _ = fresh(pace=FakePace(budget=5 * 60)); t3.research("cheap lamps")
+    assert ("cheap lamps", "bing") in fb1.queries and ("cheap lamps", "bing") in fb2.queries, (fb1.queries, fb2.queries)
+    assert ("cheap lamps", "bing") not in fb3.queries, fb3.queries
+
+
+@check("widen: follows the shipping link inside a good site, skips login/social/other-site links")
+def _():
+    with NoNet():
+        t, fb, _ = fresh(pace=FakePace(mode="slow"))
+        out = t.research("cheap lamps")
+    assert "https://shop-a.com/shipping" in fb.opened and "Shipping & delivery › Shipping — Shop A" in out, (fb.opened, out[-600:])
+    assert "https://shop-a.com/login" not in fb.opened and "https://other-site.com/prices" not in fb.opened, fb.opened
+    assert "1 page inside the sites" in out, out[-400:]
+
+
+@check("widen: Wikipedia + YouTube lines appear with their own key sentences")
+def _():
+    with NoNet() as nn:
+        t, fb, _ = fresh(pace=FakePace(mode="slow"))
+        out = t.research("cheap lamps")
+    assert ("wiki", "cheap lamps", "en") in nn.calls and ("yt", "cheap lamps") in nn.calls, nn.calls
+    assert "Wikipedia: Lamp" in out and "en.wikipedia.org/wiki/Lamp" in out and "less than 30 euros" in out, out[-900:]
+    assert "YouTube: Best cheap lamps" in out and "19 euros" in out, out[-900:]
+    assert "Wikipedia" in out.split("Widened because")[1] and "YouTube" in out.split("Widened because")[1]
+
+
+@check("widen: italian topic asks it.wikipedia")
+def _():
+    with NoNet() as nn:
+        t, fb, _ = fresh(pace=FakePace(mode="slow"))
+        t.research("migliori lampade economiche")
+    assert any(c[0] == "wiki" and c[2] == "it" for c in nn.calls), nn.calls
+
+
+@check("widen: nothing found anywhere → honest line, no crash")
+def _():
+    with NoNet(wiki=False, yt=False):
+        t, fb, _ = fresh(pace=FakePace(mode="slow"))
+        fb.other_engines = lambda: []
+        out = t.research("cheap lamps price")             # no deep links on these pages
+    assert "Widened because there was time: tried a second engine and the inside pages — nothing new." in out, out[-300:]
+
+
+@check("widen: hurry beats slow (no widening when the owner said hurry)")
+def _():
+    with NoNet() as nn:
+        t, fb, _ = fresh(pace=FakePace(mode="slow", hurry=True))
+        out = t.research("cheap lamps")
+    assert not nn.calls and "Widened" not in out
+
+
+@check("widen: second-engine failure is logged, the rest still runs")
+def _():
+    with NoNet() as nn:
+        t, fb, _ = fresh(pace=FakePace(mode="slow"))
+        real = fb.search_results
+        def sr(q, n, engine=None):
+            if engine:
+                raise BrowserError("bing down")
+            return real(q, n)
+        fb.search_results = sr
+        out = t.research("cheap lamps")
+    assert nn.calls and "Wikipedia" in out and "second opinion from bing (0 pages)" in out, out[-400:]
+
+
+@check("widen: memory note carries the extra sources too")
+def _():
+    with NoNet():
+        t, fb, mem = fresh(pace=FakePace(mode="slow"))
+        t.research("cheap lamps")
+    urls = mem.notes[0][3]
+    assert any("wikipedia" in u for u in urls) and any("bing-only" in u for u in urls), urls
+
+
+@check("walls: a site is skipped only after two walls in the same job (one walled path must not hide the rest of the site)")
+def _():
+    t, fb, _ = fresh()
+    fb.walls = {"https://shop-a.com/lamp": "captcha"}
+    real_status = fb.status
+    fb.status = lambda: fb.walls.get(fb.cur, "ok")
+    t.pass_wall = lambda b, url, essential=False: False
+    out = t.research("cheap lamps", n_pages=5)
+    assert "https://shop-a.com/other" in fb.opened, fb.opened            # one wall → the site's other page still read
+    fb2 = FakeB(); t2 = RT(fb2, memory=FakeMem())
+    fb2.status = lambda: "captcha" if fb2.cur in ("https://shop-a.com/lamp", "https://shop-a.com/other") else "ok"
+    t2.pass_wall = lambda b, url, essential=False: False
+    t2.research("cheap lamps", n_pages=5)
+    assert "https://shop-a.com/third" not in fb2.opened, fb2.opened      # two walls → the third page is not knocked
 
 
 def main():

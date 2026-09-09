@@ -20,6 +20,7 @@ import urllib.parse
 
 from . import config
 from .browser import Browser, BrowserError
+from . import sources
 from . import video
 
 FORUM = re.compile(r"reddit\.com|quora\.com|facebook\.com|youtube\.com|tiktok\.com|instagram\.com|pinterest\.|x\.com|twitter\.com|linkedin\.com/posts", re.I)
@@ -208,10 +209,114 @@ class Tasks:
             lines.append(f"• {x}")
         return lines if (agreed or rest) else []
 
-    def research(self, topic, n_pages=3, want_doc=False):
+    WIDEN_PAGES = 4           # extra browser pages a widened research may read (second engine + inside-site links)
+
+    def _time_left(self):
+        """Is there time to look in more places? Slow mode, an "at least N" floor, or > 10 min of quiet time — and no hurry/stop."""
+        p = self.pace
+        if not p or self._hurried() or self._stopped() or self._over_budget():
+            return False
+        try:
+            if getattr(p, "mode", "") == "slow" or (hasattr(p, "under_floor") and p.under_floor()):
+                return True
+            b = p.budget_left() if hasattr(p, "budget_left") else None
+            return bool(b and b > 10 * 60)
+        except Exception:
+            return False
+
+    def _widen(self, b, topic, queries, opened, q_of, deep, n_extra, want_doc, images):
+        """More places, when time is left: a second engine, the facts pages inside the good sites, Wikipedia, YouTube.
+        Appends to `opened`; returns {"second": (engine, n), "deep": n, "wikipedia": bool, "youtube": bool}."""
+        info = {"second": None, "deep": 0, "wikipedia": False, "youtube": False}
+        have = {u for _, u, _ in opened}
+        doms = lambda: [urllib.parse.urlparse(u).netloc.lower() for u in have]
+
+        def read(url, title_prefix=""):
+            """Open url, return (title, url, key sentences) or None; walls and thin pages are skipped, never fought."""
+            if self._stopped() or self._over_budget() or url in have or FORUM.search(url):
+                return None
+            try:
+                b.open(url)
+                if b.status() != "ok":
+                    self.log("task_wall", url=url, wall=b.status()); return None
+                ks = key_sentences(b.extract_text(), topic)
+            except BrowserError:
+                return None
+            if not ks:
+                return None
+            have.add(url)
+            title = (b.page.title() or "")[:80] or url
+            if want_doc:
+                images[url] = self._page_image(b)
+            return (title_prefix + title, url, ks)
+
+        budget = n_extra
+        # 1) second opinion: the same question to an engine that did not answer the first time (different index → different sites)
+        others = list(getattr(b, "other_engines", lambda: [])())
+        if others and budget > 0:
+            eng = others[0]
+            try:
+                results = b.search_results(queries[0], 8, engine=eng)
+            except (BrowserError, TypeError) as e:
+                self.log("widen_search_failed", engine=eng, error=str(e)[:80]); results = []
+            got = 0
+            for r in results:
+                if got >= 2 or budget <= 0:
+                    break
+                dom = urllib.parse.urlparse(r["url"]).netloc.lower()
+                if doms().count(dom) >= 2:
+                    continue
+                pg = read(r["url"])
+                if pg:
+                    opened.append(pg); q_of[r["url"]] = 0; got += 1; budget -= 1
+            info["second"] = (eng, got)
+        # 2) inside the sites: the shipping / price / spec / FAQ page a good page links to (one per site)
+        seen_sites = set()
+        for page_url, (label, url) in deep:
+            if budget <= 0:
+                break
+            site = urllib.parse.urlparse(url).netloc.lower()
+            if site in seen_sites:
+                continue
+            seen_sites.add(site)
+            pg = read(url, title_prefix=f"{label} › ")
+            if pg:
+                opened.append(pg); q_of[url] = 0; info["deep"] += 1; budget -= 1
+        # 3) the neutral definition (no browser: two small API calls)
+        if not self._stopped():
+            w = sources.wikipedia(self._core_topic(topic), lang="it" if re.search(r"\b(come|cosa|quale|migliori?|prezz\w*|dove|perch[eé])\b", topic.lower()) else "en")
+            if w and w["url"] not in have:
+                ks = key_sentences(w["text"], topic, limit=3) or [w["text"].split(". ")[0][:300] + "."]
+                opened.append((w["title"], w["url"], ks)); have.add(w["url"]); info["wikipedia"] = True
+        # 4) what people are told out loud: the most-watched video, its transcript when there is one
+        if not self._stopped():
+            y = sources.youtube(self._core_topic(topic))
+            if y and y["url"] not in have:
+                ks = sources.transcript_sentences(y["text"], topic) if y.get("text") else []
+                opened.append((y["title"], y["url"], ks or [f"Most-watched video on the topic — {sources.views_text(y.get('views', 0))} views, channel {y.get('channel', '')}; no transcript to quote."]))
+                have.add(y["url"]); info["youtube"] = True
+        return info
+
+    @staticmethod
+    def _widen_line(info):
+        bits = []
+        if info.get("second"):
+            eng, n = info["second"]
+            bits.append(f"second opinion from {eng} ({n} page{'s' if n != 1 else ''})")
+        if info.get("deep"):
+            bits.append(f"{info['deep']} page{'s' if info['deep'] != 1 else ''} inside the sites (shipping/prices/specs)")
+        if info.get("wikipedia"):
+            bits.append("Wikipedia")
+        if info.get("youtube"):
+            bits.append("YouTube")
+        return "Widened because there was time: " + (" · ".join(bits) if bits else "tried a second engine and the inside pages — nothing new") + "."
+
+    def research(self, topic, n_pages=3, want_doc=False, widen=None):
         t0 = time.time()
         report = [f"Research: {topic}"]
         images = {}
+        deep = []                     # [(page_url, (label, url))] — facts pages linked from the good pages, for the widening pass
+        widen_info = None
         # 1) what the local pack already knows
         if self.brain and self.brain.ready:
             local = self.brain.ask(topic)
@@ -222,6 +327,8 @@ class Tasks:
         q_of = {}
         queries = self.plan_queries(topic, fast=self._hurried())
         nq_ok, last_err = 0, None
+        walled = {}                   # site → walls seen in this job; after two, the site is skipped (some sites wall one path, not all)
+        tried = set()                 # every URL opened in this job — a page that gave nothing is not opened again from another angle
         with self._session() as b:
             stopped = False; cut = False
             for qi, q in enumerate(queries):
@@ -246,18 +353,24 @@ class Tasks:
                         break
                     if len(opened) >= n_pages:
                         break
-                    if FORUM.search(r["url"]) or r["url"] in q_of:
+                    if FORUM.search(r["url"]) or r["url"] in q_of or r["url"] in tried:
                         continue
+                    tried.add(r["url"])
                     dom = urllib.parse.urlparse(r["url"]).netloc.lower()
                     if dom and sum(1 for u in q_of if urllib.parse.urlparse(u).netloc.lower() == dom) >= 2:
                         continue                       # at most 2 pages per site (file:// pages have no site — never capped)
+                    if dom and walled.get(dom.removeprefix("www."), 0) >= 2:
+                        continue                       # this site walled twice already — the next site, not a third knock
                     try:
                         b.open(r["url"])
                         st = b.status()
                         if st == "captcha" and self.pass_wall(b, r["url"]):
                             st = b.status()
                         if st != "ok":
-                            self.log("task_wall", url=r["url"], wall=st); continue
+                            self.log("task_wall", url=r["url"], wall=st)
+                            if dom:
+                                walled[dom.removeprefix("www.")] = walled.get(dom.removeprefix("www."), 0) + 1
+                            continue
                         text = b.extract_text()
                     except BrowserError:
                         continue
@@ -267,8 +380,20 @@ class Tasks:
                         q_of[r["url"]] = qi
                         if want_doc:
                             images[r["url"]] = self._page_image(b)
+                        try:
+                            deep += [(r["url"], d) for d in sources.deep_links(b.links(120), r["url"], limit=2)]
+                        except Exception:
+                            pass
             if not opened and not nq_ok:
                 return "\n".join(report + [f"(web search failed: {last_err})"])
+            engine = getattr(b, "engine_used", None)
+            # 2b) time left (slow / floor / quiet budget) → look in more places: another engine, inside the sites, Wikipedia, YouTube
+            if (self._time_left() if widen is None else widen) and not stopped and not cut:
+                try:
+                    widen_info = self._widen(b, topic, queries, opened, q_of, deep, self.WIDEN_PAGES, want_doc, images)
+                    self.log("research_widen", **{k: (v if not isinstance(v, tuple) else f"{v[0]} {v[1]}") for k, v in widen_info.items()})
+                except Exception as e:
+                    self.log("widen_failed", error=str(e)[:100])
         # 3) what the owner added while I was reading ("also look at prices in germany") → one or two more pages on that
         change, extra = self.owner_change.strip(), []
         self.owner_change = ""
@@ -314,7 +439,9 @@ class Tasks:
                 report.append(f"\n{title}\n{url}\n" + "\n".join(f"• {s}" for s in ks))
         if change:
             report.append(f"You added “{change}” while I worked: " + (f"{len(extra)} page(s) on it are included" + (" (marked in the document)" if want_doc else "") if extra else "I searched for it but found nothing solid — say it again with other words if it matters") + ".")
-        report.append(f"({len(opened)} pages read in {time.time() - t0:.0f}s" + (f" · {len(queries)} search angles" if len(queries) > 1 else "") + (" — stopped early as you asked" if stopped else (" — quiet-time budget ran out, I stopped here" if cut else "")) + ")")
+        if widen_info is not None:
+            report.append(self._widen_line(widen_info))
+        report.append(f"({len(opened)} pages read in {time.time() - t0:.0f}s" + (f" · {len(queries)} search angles" if len(queries) > 1 else "") + (f" · via {engine}" if engine else "") + (" — stopped early as you asked" if stopped else (" — quiet-time budget ran out, I stopped here" if cut else "")) + ")")
         out = "\n".join(report)
         if self.memory and opened:
             self.memory.note("research", topic, brief or out, [u for _, u, _ in opened])
@@ -323,6 +450,7 @@ class Tasks:
             self.last_native = ("research", {"topic": topic, "summary": brief or "", "pages": [{"title": t, "url": u, "points": list(ks)} for t, u, ks in opened]})
             out = ((f"Research: {topic}\n\n{brief}" if brief else f"Research: {topic} — {len(opened)} pages read; the document has the key points per page with links and pictures.") +
                    (f"\nYou added “{change}” while I worked: " + (f"{len(extra)} page(s) on it are in the document, marked." if extra else "I searched for it but found nothing solid.") if change else "") +
+                   (f"\n{self._widen_line(widen_info)}" if widen_info is not None else "") +
                    f"\n({len(opened)} pages read in {time.time() - t0:.0f}s)")
         elif want_doc:
             self.last_doc = None

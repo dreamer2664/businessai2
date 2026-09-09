@@ -38,7 +38,7 @@ CONFIG = {
     "score_pack": (["tests/business.txt", "release/packs/business.kdw"], 300, False),
     "score_phone": ([], 240, False),
     "score_queue": ([], 120, False), "score_rehearsal": ([], 300, True),
-    "score_research": ([], 120, False),
+    "score_research": ([], 120, False), "score_sources": ([], 120, False),
     "score_youtube": ([], 120, False),
     "score_dropship": ([], 120, False), "score_disk": ([], 120, False),
     "score_think": ([], 120, False),
