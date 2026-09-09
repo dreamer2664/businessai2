@@ -252,3 +252,6 @@ VERSION 2.0 (2026-09-08): the shop grows extras and a designer — discount code
 
 ## 2026-09-09 night marathon, item 2 (smarter research) — done
 - plan_queries (EN/IT intent aspects), research() multi-query with dedupe + domain cap, _synthesize (agreement + ranked facts, per-page bullets kept), outer-loop budget cut recorded. score_research 19/19 (fake browser). Fast battery: 11 PASS, 2 pre-existing PARTIAL, 2 env SKIP, 0 FAIL.
+
+## 2026-09-09 night marathon, item 4 (YouTube) — done
+- Owner overrode API-first: browser-first, no key. InnerTube browse/next are 400/locked and feeds are empty shells, so: extract_trending/comments (rendered-DOM, PC browser) + top_for_topic (search page, live-verified: millions of views parsed) + transcript hardened (429 backoff, 4-track fallback; sandbox caption CDN throttled, PC verifies). score_youtube 12/12. Fast battery: 12 PASS, 2 pre-existing PARTIAL, 2 env SKIP, 0 FAIL.

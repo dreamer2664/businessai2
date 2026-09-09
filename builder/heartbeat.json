@@ -1,6 +1,6 @@
 {
  "branch": "night/marathon",
- "pct": 55,
+ "pct": 62,
  "rows": [
   [
    "0",
@@ -30,7 +30,7 @@
    "4",
    "YouTube trending + comments",
    "7",
-   "queued"
+   "DONE (youtube 12/12 + live)"
   ],
   [
    "5",
@@ -70,8 +70,8 @@
   ]
  ],
  "latest": [
-  "Smarter research built: planner + multi-source + synthesis (19/19).",
-  "Battery: 15 suites, 0 FAIL.",
-  "Next: item 4 (YouTube trending + comments)."
+  "YouTube built browser-first: trending/comments + ranked tops (12/12, live ok).",
+  "Battery: 16 suites, 0 FAIL.",
+  "Next: item 8 (pack #3 dropshipping feed)."
  ]
 }
