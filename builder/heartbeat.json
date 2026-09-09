@@ -1,6 +1,6 @@
 {
  "branch": "night/marathon",
- "pct": 33,
+ "pct": 41,
  "rows": [
   [
    "0",
@@ -48,7 +48,7 @@
    "7",
    "Time budgets + priority queue",
    "8",
-   "queued"
+   "DONE (queue 20/20, battery green)"
   ],
   [
    "8",
@@ -70,8 +70,8 @@
   ]
  ],
  "latest": [
-  "Regression battery built: one command, 24 suites, SKIP-clean (0 FAIL).",
-  "Items 1+5+10 merged to main (green).",
-  "Next: item 7 (time budgets + priority queue)."
+  "Priority queue + budgets + EN/IT durations built (20/20).",
+  "Battery caught 2 regressions mid-build; fixed, 0 FAIL.",
+  "Next: item 2 (smarter research)."
  ]
 }

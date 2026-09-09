@@ -822,6 +822,17 @@ class Agent:
                 threading.Thread(target=self.poll_fallback, daemon=True).start()
                 return "\U0001F4E7 Checking mail now \u2014 I'll answer here if I find anything."
             return "\U0001F4E7 " + self.fallback.status()
+        if low.startswith("/queue"):
+            parts = text[6:].strip().split()
+            if not parts:
+                return self.mind.q_list()
+            if parts[0] == "clear":
+                nq = self.mind.q_clear()
+                return f"Cleared {nq} queued request{'s' if nq != 1 else ''}." if nq else "Queue's already empty."
+            if parts[0] in ("high", "med", "low") and len(parts) > 1 and parts[1].isdigit():
+                e = self.mind.q_set(int(parts[1]), {"high": 0, "med": 1, "low": 2}[parts[0]])
+                return f"#{parts[1]} is now {parts[0]} priority." if e else "No queued request with that number — /queue lists them."
+            return self.mind.q_list()
         if low.startswith("/channels"):
             arg = low[9:].strip()
             if arg == "check":
@@ -853,8 +864,8 @@ class Agent:
             if not arg:
                 return self.shopfacts.sheet_text()
             if self.busy:
-                self.mind.queue.append((f"/shop {arg}", time.time()))
-                return f"I'm still on: {self.busy}. Queued the shop read as #{len(self.mind.queue)} — it starts right after."
+                qpos = self.mind.q_add(f"/shop {arg}")
+                return f"I'm still on: {self.busy}. Queued the shop read as #{qpos} — it starts right after."
             self.start_shop_read(arg)
             return f"Reading {arg} now — its help, shipping, returns and contact pages. About a minute; I'll show you what I found."
         if low.startswith("/policy"):
@@ -1042,8 +1053,8 @@ class Agent:
                 elif self.mind.job.get("kind") in ("research", "compare"):
                     self.tasks.owner_change = (self.tasks.owner_change + "; " + text).strip("; ")
                 return f"Noted for this job: “{text.strip()[:100]}”. I apply it to what's left, and I'll say so in the result."
-            self.mind.queue.append((text, time.time()))
-            return f"Got it — I'm in the middle of “{_short(self.mind.job['goal'])}”, so this is queued as #{len(self.mind.queue)}. I start it as soon as I'm done (or say 'stop' to switch now)."
+            qpos = self.mind.q_add(text)
+            return f"Got it — I'm in the middle of “{_short(self.mind.job['goal'])}”, so this is queued as #{qpos}. I start it as soon as I'm done (or say 'stop' to switch now)."
         if self.last_brief and self.GO_WORDS.match(low):
             b, self.last_brief = self.last_brief, None
             return self.execute(b, approved=True)
@@ -1213,8 +1224,8 @@ class Agent:
         if self.busy and getattr(self, "filler", False):
             self.preempt_filler()                      # self-training is filler: cut it, the owner's job starts now
         if self.busy:                                  # e.g. ▶ Go tapped while another job runs → queue it, never a dead end
-            self.mind.queue.append((b, time.time()))
-            return (f"I'm still on: {self.busy}. I queued “{_short(b.get('goal'))}” as #{len(self.mind.queue)} and start it right after "
+            qpos = self.mind.q_add(b)
+            return (f"I'm still on: {self.busy}. I queued “{_short(b.get('goal'))}” as #{qpos} and start it right after "
                     f"(say 'stop' to switch now).")
         self.pace.set(b["pace"], b["goal"])
         self.active_brief = b
@@ -1539,8 +1550,8 @@ class Agent:
                     "/do desktop what is written on my screen right now?\nI look, decide one step, click or type, check, repeat — "
                     "and ask you before any click that costs money, publishes, signs in or deletes.")
         if self.busy:
-            self.mind.queue.append((f"/do {arg}", time.time()))
-            return f"I'm still on: {self.busy}. Queued this /do as #{len(self.mind.queue)} — it starts right after (say 'stop' to switch now)."
+            qpos = self.mind.q_add(f"/do {arg}")
+            return f"I'm still on: {self.busy}. Queued this /do as #{qpos} — it starts right after (say 'stop' to switch now)."
         if not self.planner.installed():
             return "My thinking model isn't installed here yet — run: sh scripts/get_model.sh"
         where = "browser"
@@ -2036,8 +2047,8 @@ class Agent:
 
     def start_task(self, kind, arg, prefix=""):
         if self.busy:
-            self.mind.queue.append((f"/{kind} {arg}".strip(), time.time()))
-            return f"I'm still on: {self.busy}. Queued “{kind} {arg[:50]}” as #{len(self.mind.queue)} — it starts right after (say 'stop' to switch now)."
+            qpos = self.mind.q_add(f"/{kind} {arg}".strip())
+            return f"I'm still on: {self.busy}. Queued “{kind} {arg[:50]}” as #{qpos} — it starts right after (say 'stop' to switch now)."
         if not arg:
             return f"What should I {kind}?"
         threading.Thread(target=self.run_task, args=(f"{kind} {arg}",), daemon=True).start()
@@ -2072,10 +2083,12 @@ class Agent:
         self.active_brief = None
         self.stop_flag = False
         if self.mind.queue:
-            item, _ = self.mind.queue.pop(0)
-            label = item.get("goal", "") if isinstance(item, dict) else item
-            self.bot.send(self.owner_id, f"▶ Now the request you queued: “{str(label)[:80]}”")
-            threading.Thread(target=self._start_queued, args=(item,), daemon=True).start()
+            e = self.mind.q_next()
+            if e is not None:
+                item = e["item"]
+                label = item.get("goal", "") if isinstance(item, dict) else item
+                self.bot.send(self.owner_id, f"▶ Now the request you queued: “{str(label)[:80]}”")
+                threading.Thread(target=self._start_queued, args=(item,), daemon=True).start()
 
     def after_job(self, text):
         """The owner's 'when you're done, …' asks: Drive upload, resend the document, or a to-do — anything else is queued as a request."""
@@ -2086,7 +2099,7 @@ class Agent:
             return self.resend_last_doc()
         if re.search(r"\bpdf\b", low):
             return "About the PDF: my documents are HTML files (they open in any browser and in Google Docs from my Drive). A PDF export is not something I can do yet — I've noted it as a wish."
-        self.mind.queue.append((re.sub(r"\b(when (you'?re |it'?s )?(done|finished|ready)|afterwards|after that|once (you'?re |it'?s )?(done|finished)|at the end)\b", "", text, flags=re.I).strip(" ,"), time.time()))
+        self.mind.q_add(re.sub(r"\b(when (you'?re |it'?s )?(done|finished|ready)|afterwards|after that|once (you'?re |it'?s )?(done|finished)|at the end)\b", "", text, flags=re.I).strip(" ,"))
         return None
 
     def _start_queued(self, item):
@@ -2182,16 +2195,16 @@ class Agent:
             self.start_shop_read(self.shopfacts.url)
             return
         goal = self.memory.next_goal()
-        if goal and 8 <= hour < 23 and self.owner_id:
+        if goal and 8 <= hour < 23 and self.owner_id and not self.pace.over_budget():
             threading.Thread(target=self.run_study, args=(goal,), daemon=True).start()
             return
         # owner away ("take it slow") and nothing else to do → self-training sessions every ~10 min
-        if self.pace.has_quiet_time() and not self.busy and now - self.last_quiet > 600:
+        if self.pace.has_quiet_time() and not self.busy and now - self.last_quiet > 600 and not self.pace.over_budget():
             self.last_quiet = now
             threading.Thread(target=self.run_quiet, daemon=True).start()
             return
         # normal idle: at most 3 quiet sessions a day, daytime only, spaced ≥ 90 min
-        if 9 <= hour < 22 and not self.busy and self.owner_id and now - self.last_quiet > 5400 and self.study.sessions_today() < 3:
+        if 9 <= hour < 22 and not self.busy and self.owner_id and now - self.last_quiet > 5400 and self.study.sessions_today() < 3 and not self.pace.over_budget():
             self.last_quiet = now
             threading.Thread(target=self.run_quiet, daemon=True).start()
 
@@ -2214,7 +2227,10 @@ class Agent:
         """Start the first queued request now (after 'stop' cut the filler)."""
         if not self.mind.queue:
             return None
-        item = self.mind.queue.pop(0)[0]
+        e = self.mind.q_next()
+        if e is None:
+            return None
+        item = e["item"]
         if isinstance(item, dict):
             return self.execute(item, approved=True)
         return self.understand(item)
@@ -2241,8 +2257,9 @@ class Agent:
             self.mind.snag("owner said stop")
             q = ""
             if self.mind.queue:
-                first = self.mind.queue[0][0]
-                q = f" Next in line: “{_short(first.get('goal') if isinstance(first, dict) else first)}”."
+                pk = self.mind.q_peek()
+                first = pk["item"] if pk is not None else None
+                q = f" Next in line: “{_short(first.get('goal') if isinstance(first, dict) else first)}”." if first is not None else ""
             return f"Stopping “{_short(self.mind.job['goal'])}” — I hand you what I have so far in a moment.{q}"
         if was:
             self.stop_flag = True
@@ -2250,7 +2267,7 @@ class Agent:
             return f"Stopping “{was}” now."
         if self.mind.queue:
             n = len(self.mind.queue)
-            self.mind.queue.clear()
+            self.mind.q_clear()
             return f"Nothing was running; I dropped the {n} queued request(s)."
         return "Nothing is running right now — I'm idle. Say what you need."
 

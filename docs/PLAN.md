@@ -246,3 +246,6 @@ VERSION 2.0 (2026-09-08): the shop grows extras and a designer — discount code
 
 ## 2026-09-09 night marathon, item 10 (regression battery) — done
 - New engine/scripts/score_all.py (24 suites + practice lane, --fast/--only/--compare, SKIP-clean on env gaps, selftest 5/5). Hardened score_store (browser sections guarded, 35/35 here) + score_shopfacts (graceful SKIP). Fast battery here: 9 PASS, 2 PARTIAL (talk 451/460 = no browser/model, inbox 22/23 pre-existing), 3 SKIP, 0 FAIL.
+
+## 2026-09-09 night marathon, item 7 (queue + budgets + durations) — done
+- Mind priority queue (classify/add/next/peek/list/set/clear, persisted), 6 core queue sites converted, /queue command, Pace.over_budget + research/compare guards + idle guards, EN/IT durations + parse_duration. score_queue 20/20. Caught by the battery mid-build: tuple-style queue readers (fixed), drain wording kept stable. Fast battery: 10 PASS, 2 pre-existing PARTIAL, 2 env SKIP, 0 FAIL.

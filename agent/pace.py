@@ -44,6 +44,10 @@ class Pace:
         self.done_at = time.time()
 
     # ---- what the clock says ------------------------------------------------------
+    def over_budget(self):
+        """Quiet-time budget used up (owner may be back) → long loops wrap up, no new background work."""
+        return self.budget_until is not None and time.time() > self.budget_until
+
     def remaining(self):
         if not self.deadline:
             return None
