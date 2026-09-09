@@ -21,6 +21,7 @@ import time
 from . import config
 
 ACCOUNTS = config.STATE_DIR / "accounts.json"
+LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1", "0.0.0.0")   # fakes + rehearsal stages: always fine to practice on
 NEVER_SIGN_UP = re.compile(r"paypal|stripe|bank|banca|revolut|wise\.com|coinbase|binance|amazon\.(?:com|it|de|fr|es|co\.uk)/ap/register|apple\.com|icloud|google\.com/accounts|accounts\.google|microsoft\.com|live\.com|facebook\.com/r\.php|instagram\.com/accounts/emailsignup|tiktok\.com/signup|x\.com/i/flow/signup", re.I)
 
 
@@ -85,9 +86,13 @@ class Accounts:
     # ---- memory of accounts -----------------------------------------------------------
     def _load(self):
         try:
-            return json.loads(ACCOUNTS.read_text())
+            d = json.loads(ACCOUNTS.read_text())
         except Exception:
-            return {"accounts": []}
+            d = {}
+        d.setdefault("accounts", [])
+        d.setdefault("approved", [])        # owner-approved real sites (item 6: real sign-ups need approval)
+        d.setdefault("refused", [])         # owner said never
+        return d
 
     def _save(self):
         ACCOUNTS.parent.mkdir(parents=True, exist_ok=True)
@@ -105,6 +110,43 @@ class Accounts:
         site = self.site_of(url)
         return next((a for a in self.data["accounts"] if a["site"] == site), None)
 
+    # ---- safe sign-up: fakes first, real sites only when approved (item 6) --------------------------
+    def is_local(self, url):
+        host = (urllib.parse.urlparse(url).hostname or "").lower()
+        return host in LOCAL_HOSTS or host.endswith(".localhost")
+
+    def approved(self, url):
+        return self.site_of(url) in self.data.setdefault("approved", [])
+
+    def allow_site(self, site):
+        """Owner approves a real site for sign-up. Returns the normalized site, or None if it is not a site."""
+        site = re.sub(r"^www\.", "", re.sub(r"^https?://", "", (site or "").strip().lower()).split("/")[0])
+        if not re.fullmatch(r"[a-z0-9.\-]+\.[a-z]{2,}(?::\d+)?", site):
+            return None
+        if site not in self.data.setdefault("approved", []):
+            self.data["approved"].append(site)
+            self._save()
+        return site
+
+    def forget_site(self, site):
+        site = re.sub(r"^www\.", "", re.sub(r"^https?://", "", (site or "").strip().lower()).split("/")[0])
+        if site in self.data.setdefault("approved", []):
+            self.data["approved"].remove(site)
+            self._save()
+            return True
+        return False
+
+    def _gate(self, url):
+        """Pre-check before any sign-up attempt: (True, 'ok') | (False, 'never-sign-up'|'refused') | (None, 'ask')."""
+        if NEVER_SIGN_UP.search(url):
+            return False, "never-sign-up"
+        site = self.site_of(url)
+        if site in self.data.setdefault("refused", []):
+            return False, "refused"
+        if self.is_local(url) or site in self.data.setdefault("approved", []):
+            return True, "ok"
+        return None, "ask"
+
     def remember(self, url, status, note=""):
         site = self.site_of(url)
         a = self.known(url)
@@ -119,7 +161,10 @@ class Accounts:
         if not self.data["accounts"]:
             return self.id.describe() + "\nNo site accounts yet — I create them when a task needs one (you get one line when I do)."
         rows = "\n".join(f"• {a['site']} — {a['status']} ({a['t']})" + (f" · {a['note']}" if a.get("note") else "") for a in self.data["accounts"][-20:])
-        return f"{self.id.describe()}\nSites where I have an account:\n{rows}"
+        out = f"{self.id.describe()}\nSites where I have an account:\n{rows}"
+        if self.data.get("approved"):
+            out += "\nApproved for sign-up: " + ", ".join(self.data["approved"])
+        return out
 
     # ---- the sign-up / login skill (runs on the hands thread with a Browser) --------------------
     SIGNUP_WORDS = re.compile(r"\b(sign ?up|create (?:an |your )?account|register|registrati|crea (?:un )?account|iscriviti|join (?:free|now)|get started)\b", re.I)
@@ -143,6 +188,25 @@ class Accounts:
             return False, f"I have an account on {a['site']} but could not log in: {note}"
         if not allow_signup:
             return False, "no account there and sign-up not allowed for this task"
+        gate, why_gate = self._gate(url)
+        site = self.site_of(url)
+        if gate is False:
+            if why_gate == "refused":
+                return False, f"you told me never to sign up on {site}."
+            return False, "that site is on my never-sign-up list (money, big platforms with strict robot bans)."
+        if gate is None:
+            if not self.ask:
+                return False, f"{site} is new to me — say '/accounts allow {site}' first and I'll sign up."
+            ans = self.ask(f"\U0001F195 Sign up on {site} with my own e-mail ({self.id.email}){' — ' + why if why else ''}?",
+                           ["Allow once", "Always allow", "Never"], 300)
+            if ans == "Always allow":
+                self.allow_site(site)
+            elif ans == "Never":
+                self.data.setdefault("refused", []).append(site)
+                self._save()
+                return False, f"noted — I won't sign up on {site}."
+            elif ans != "Allow once":
+                return False, f"sign-up on {site} needs your tap first ('/accounts allow {site}')."
         if not a:
             if not getattr(self, "_quiet", False):
                 self.notify(f"🆕 I'm creating an account on {self.site_of(url)} with my own e-mail ({self.id.email}){' — ' + why if why else ''}. Say 'stop' if you don't want that.")

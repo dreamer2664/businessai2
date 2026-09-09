@@ -1,6 +1,6 @@
 {
  "branch": "night/marathon",
- "pct": 72,
+ "pct": 86,
  "rows": [
   [
    "0",
@@ -12,7 +12,7 @@
    "1",
    "Fallback contact (Gmail + backup bot)",
    "12",
-   "DONE (14/14 offline, live test at setup)"
+   "DONE (17/17 offline, live test at setup)"
   ],
   [
    "2",
@@ -42,7 +42,7 @@
    "6",
    "Gmail mastery + safe signups",
    "8",
-   "queued"
+   "DONE (gmail 8/8, accounts 17/17, threaded replies + approval gate)"
   ],
   [
    "7",
@@ -60,7 +60,7 @@
    "9",
    "Viewer reasoning upgrade",
    "6",
-   "queued"
+   "DONE (think 12/12, #think panel + /thinking)"
   ],
   [
    "10",
@@ -70,8 +70,8 @@
   ]
  ],
  "latest": [
-  "Pack #3 seeded: 37 guides, 2,181 passages, 36 grounded questions (10/10).",
-  "Feed script grows packs across sessions; .kdw builds on the PC.",
-  "Next: item 9 (viewer thinking panel)."
+  "Item 9 done: thinking panel live (why/status/queue/lessons) + /thinking.",
+  "Item 6 done: threaded Gmail replies + read/archive tidy; sign-ups need approval (/accounts allow), --drill trains on fakes.",
+  "Battery 19/19, 0 FAIL. Next: item 3 (marketplace scrapers) \u2014 the last one."
  ]
 }

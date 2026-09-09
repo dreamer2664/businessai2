@@ -32,7 +32,8 @@ TOKEN_FILE = config.ROOT / ".secrets" / "google_token.json"
 PENDING_FILE = config.ROOT / ".secrets" / "google_pending.json"   # consent flow state: survives restarts
 SCOPES = ["https://www.googleapis.com/auth/drive.file",          # files the app created (its library folder)
           "https://www.googleapis.com/auth/gmail.readonly",     # read its own inbox for verification codes
-          "https://www.googleapis.com/auth/gmail.send"]         # send mail as itself (fallback channel)
+          "https://www.googleapis.com/auth/gmail.send",        # send mail as itself (fallback channel)
+          "https://www.googleapis.com/auth/gmail.modify"]       # mark read / archive what it handled (mastery, item 6)
 LIBRARY_FOLDER = "Business AI library"
 UPLOAD = "https://www.googleapis.com/upload/drive/v3/files"
 DRIVE = "https://www.googleapis.com/drive/v3"
@@ -357,7 +358,7 @@ class Google:
 
     # ---- Gmail: read its own verification codes --------------------------------------
     def recent_mail(self, query="newer_than:1d", limit=10):
-        """Latest messages matching a Gmail search; returns [{id, from, subject, date, snippet, text}]."""
+        """Latest messages matching a Gmail search; returns [{id, thread, msgid, labels, from, subject, date, snippet, text}]."""
         d = self._get(f"{GMAIL}/messages", q=query, maxResults=limit)
         out = []
         for m in d.get("messages", []):
@@ -375,36 +376,65 @@ class Google:
                         body = re.sub(r"&nbsp;|&#160;", " ", body)
             except Exception:
                 body = ""
-            out.append({"id": m["id"], "from": str(msg.get("From", "")), "subject": str(msg.get("Subject", "")),
+            out.append({"id": m["id"], "thread": full.get("threadId", ""), "msgid": str(msg.get("Message-ID", "")),
+                        "labels": full.get("labelIds", []), "from": str(msg.get("From", "")), "subject": str(msg.get("Subject", "")),
                         "date": str(msg.get("Date", "")), "snippet": full.get("snippet", ""), "text": re.sub(r"\s+", " ", body).strip()[:4000]})
         return out
 
-    def send_mail(self, to, subject, body, html=None):
-        """Send an email as the app account (fallback channel: reports + replies to the owner). Returns the sent id."""
+    def send_mail(self, to, subject, body, html=None, thread_id=None, in_reply_to=None):
+        """Send an email as the app account (fallback channel: reports + replies to the owner). Returns the sent id.
+        thread_id + in_reply_to (the original Message-ID) turn it into a real threaded reply."""
         msg = email.message.EmailMessage(policy=email.policy.default)
         msg["To"] = to
         msg["From"] = self.account() or "me"
         msg["Subject"] = subject
+        if in_reply_to:
+            msg["In-Reply-To"] = in_reply_to
+            msg["References"] = in_reply_to
         if html:
             msg.set_content(body)
             msg.add_alternative(html, subtype="html")
         else:
             msg.set_content(body)
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+        payload = {"raw": raw}
+        if thread_id:
+            payload["threadId"] = thread_id
         d = self._req(f"{GMAIL}/messages/send", method="POST",
-                      data=json.dumps({"raw": raw}).encode(),
+                      data=json.dumps(payload).encode(),
                       headers={"Content-Type": "application/json"})
         self.log("gmail_sent", to=str(to)[:60], subject=str(subject)[:60])
         return d.get("id", "")
 
+    def mark_read(self, mid):
+        """Mark one message read (best-effort; needs gmail.modify — old tokens raise, callers swallow)."""
+        self._req(f"{GMAIL}/messages/{mid}/modify", method="POST",
+                  data=json.dumps({"removeLabelIds": ["UNREAD"]}).encode(),
+                  headers={"Content-Type": "application/json"})
+
+    def archive(self, mid):
+        """Archive one message out of the inbox (same best-effort contract as mark_read)."""
+        self._req(f"{GMAIL}/messages/{mid}/modify", method="POST",
+                  data=json.dumps({"removeLabelIds": ["INBOX"]}).encode(),
+                  headers={"Content-Type": "application/json"})
+
     CODE_RE = re.compile(r"(?<![\d-])(\d{4,8})(?![\d-])")
+
+    @staticmethod
+    def _from_query(hint):
+        """A server-side from: clause when the hint is a safe single token, else ''."""
+        hint = (hint or "").lower()
+        if re.fullmatch(r"[a-z0-9][a-z0-9.\-]*", hint):
+            return f" from:({hint})"
+        return ""
 
     def find_code(self, sender_hint="", since_minutes=15, tries=6, wait=20):
         """Poll the inbox for a fresh verification code (4–8 digits) — optionally from a sender/subject containing sender_hint.
         Returns (code, mail) or (None, None). Waits `wait` s between tries so the mail has time to arrive."""
         hint = (sender_hint or "").lower()
+        query = f"newer_than:{max(1, since_minutes // 60 + 1)}h" + self._from_query(hint)
         for _ in range(tries):
-            mails = self.recent_mail(f"newer_than:{max(1, since_minutes // 60 + 1)}h", 10)
+            mails = self.recent_mail(query, 10)
             for m in mails:
                 blob = f"{m['from']} {m['subject']}".lower()
                 if hint and hint not in blob and hint.split(".")[0] not in blob:
@@ -424,8 +454,9 @@ class Google:
     def find_link(self, sender_hint="", pattern=r"(verify|confirm|activate|conferma|verifica)", since_minutes=15, tries=6, wait=20):
         """Poll for a confirmation link in a fresh mail."""
         hint = (sender_hint or "").lower()
+        query = f"newer_than:{max(1, since_minutes // 60 + 1)}h" + self._from_query(hint)
         for _ in range(tries):
-            for m in self.recent_mail(f"newer_than:{max(1, since_minutes // 60 + 1)}h", 10):
+            for m in self.recent_mail(query, 10):
                 if hint and hint not in f"{m['from']} {m['subject']}".lower():
                     continue
                 full = self._get(f"{GMAIL}/messages/{m['id']}", format="raw")

@@ -1,7 +1,7 @@
 """Score the fallback channel (item 1): Gmail two-way + backup bot + watchdog.
 
 Offline: FakeGoogle + FakeTG stand in for the network. Real Gmail live tests happen
-at setup time with the owner (/fallback test send). 14 checks.
+at setup time with the owner (/fallback test send). 17 checks (item 6: threaded replies + tidy-up).
 """
 import os
 import sys
@@ -30,6 +30,8 @@ class FakeGoogle:
         self.me = "bot@gmail.com"
         self.inbox = []
         self.sent = []
+        self.sent_full = []
+        self.tidy = []
 
     def connected(self):
         return self.up
@@ -40,9 +42,16 @@ class FakeGoogle:
     def recent_mail(self, q, n):
         return self.inbox[:n]
 
-    def send_mail(self, to, subject, body):
+    def send_mail(self, to, subject, body, thread_id=None, in_reply_to=None):
         self.sent.append((to, subject, body))
+        self.sent_full.append({"to": to, "thread": thread_id, "in_reply_to": in_reply_to})
         return {"id": "fake"}
+
+    def mark_read(self, mid):
+        self.tidy.append(("read", mid))
+
+    def archive(self, mid):
+        self.tidy.append(("archive", mid))
 
 
 class FakeTG:
@@ -71,8 +80,8 @@ def fresh(allowed=("me@home.com",)):
     return g, fb, tg, lambda t: (got.append(t), f"RAN:{t[:40]}")[1], got
 
 
-def mail(mid, sender, subject, text):
-    return {"id": mid, "from": sender, "subject": subject, "text": text}
+def mail(mid, sender, subject, text, thread="t-" + "1", msgid="<m1@home.com>"):
+    return {"id": mid, "from": sender, "subject": subject, "text": text, "thread": thread, "msgid": msgid}
 
 
 @check("owner mail answered by email")
@@ -198,6 +207,33 @@ def _():
     fb.poll(respond)
     fb2 = fbmod.Fallback(google=g)
     assert "m9" in fb2.state["seen"]
+
+
+@check("reply lands in the same thread")
+def _():
+    g, fb, tg, respond, got = fresh()
+    g.inbox = [mail("m10", "me@home.com", "hello", "what is my plan")]
+    fb.poll(respond)
+    assert g.sent_full and g.sent_full[0]["thread"] == "t-1", g.sent_full
+    assert g.sent_full[0]["in_reply_to"] == "<m1@home.com>", g.sent_full
+
+
+@check("answered mail marked read + archived")
+def _():
+    g, fb, tg, respond, got = fresh()
+    g.inbox = [mail("m11", "me@home.com", "hello", "what is my plan")]
+    fb.poll(respond)
+    assert ("read", "m11") in g.tidy and ("archive", "m11") in g.tidy, g.tidy
+
+
+@check("tidy failure never breaks the answer")
+def _():
+    g, fb, tg, respond, got = fresh()
+    g.inbox = [mail("m12", "me@home.com", "hello", "what is my plan")]
+    g.mark_read = lambda mid: (_ for _ in ()).throw(RuntimeError("403 scope"))
+    g.archive = lambda mid: (_ for _ in ()).throw(RuntimeError("403 scope"))
+    h = fb.poll(respond)
+    assert len(h) == 1 and len(g.sent) == 1, (h, g.sent)
 
 
 def main():

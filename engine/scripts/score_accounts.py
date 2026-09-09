@@ -1,6 +1,7 @@
 """Score the own-account skill on a fake site: python3 engine/scripts/score_accounts.py [--show]
 sign-up form recognised & filled from the identity · marketing box untouched · code fetched from (fake) Gmail and entered ·
-account remembered · second visit logs in instead · checkbox CAPTCHA passed · never-sign-up list · owner told once."""
+account remembered · second visit logs in instead · checkbox CAPTCHA passed · never-sign-up list · owner told once.
+Item 6: approval gate (fakes always fine, real sites need the owner) + --drill N training rounds on fresh fakes."""
 import os, re, sys, time
 sys.path.insert(0, "."); sys.path.insert(0, "tests/signup")
 os.environ.pop("DISPLAY", None); os.environ["BAI_STATE"] = "/tmp/bai_accounts_state"
@@ -9,6 +10,12 @@ import server as fake
 from agent.tasks import Tasks
 from agent.accounts import Accounts, Identity, NEVER_SIGN_UP
 show = "--show" in sys.argv
+drill_n = 0
+for a in sys.argv[1:]:
+    if a == "--drill":
+        drill_n = 4
+    elif a.startswith("--drill=") and a[8:].isdigit():
+        drill_n = int(a[8:])
 ok = total = 0
 def check(name, cond, detail=""):
     global ok, total
@@ -31,11 +38,53 @@ check("identity: email/password from env", idn.ready() and idn.email.endswith("@
 check("identity: field mapping", idn.value_for("Email address") == idn.email and idn.value_for("Confirm password") == idn.password and idn.value_for("First name") == "Business" and idn.value_for("Phone number") is None)
 check("never-sign-up list: paypal / google accounts", NEVER_SIGN_UP.search("https://www.paypal.com/signup") and NEVER_SIGN_UP.search("https://accounts.google.com/signup") and not NEVER_SIGN_UP.search("https://www.trustpilot.com/users/connect"))
 
+
 srv = fake.serve(8098, captcha=False); srv2 = fake.serve(8099, captcha=True)
 notes = []
 T = Tasks(log=lambda k, **f: None)
 A = Accounts(google=FakeGoogle(), log=lambda k, **f: None, notify=lambda t: notes.append(t))
 if os.path.exists("/tmp/bai_accounts_state/accounts.json"): os.remove("/tmp/bai_accounts_state/accounts.json"); A.data = {"accounts": []}
+check("gate: local fine / never refused / unknown real needs asking",
+      A._gate("http://127.0.0.1:8098/") == (True, "ok") and A._gate("http://localhost:9/x") == (True, "ok")
+      and A._gate("https://www.paypal.com/signup")[0] is False and A._gate("https://example.com/join") == (None, "ask"))
+check("gate: allow/forget round-trip",
+      A.allow_site("Example.com/join") == "example.com" and A._gate("https://example.com/join") == (True, "ok")
+      and A.forget_site("https://www.example.com/") is True and A.forget_site("example.com") is False
+      and A._gate("https://example.com/join") == (None, "ask"))
+check("gate: junk is not a site", A.allow_site("not a site") is None and A.allow_site("") is None)
+ok0, note0 = A.ensure_account(None, "https://example.com/join")
+check("gate: unknown real site refused with no way to ask (no browser touched)", ok0 is False and "/accounts allow" in note0, note0)
+A2 = Accounts(google=FakeGoogle(), log=lambda k, **f: None, notify=lambda t: None, ask=lambda *a: "Never")
+ok0b, note0b = A2.ensure_account(None, "https://shop.test/join")
+check("gate: owner 'Never' remembered", ok0b is False and A2._gate("https://shop.test/join") == (False, "refused"), note0b)
+
+if drill_n:
+    wins, times = 0, []
+    for i in range(drill_n):
+        port = 18200 + i
+        fake.STATE["captcha_ok"].clear()
+        A.data = {"accounts": []}                                   # every round signs up fresh (fakes first, always)
+        srv = fake.serve(port, captcha=bool(i % 2))
+        t0 = time.time()
+        def run(p=port):
+            b = T.browser()
+            okd, noted = A.ensure_account(b, f"http://127.0.0.1:{p}/", why="drill round")
+            return okd, noted, b.page.url
+        try:
+            okd, noted, url = T.on_hands(run, timeout=120)
+        except Exception as e:
+            okd, noted, url = False, f"error: {e}"[:80], ""
+        dt = time.time() - t0
+        srv.shutdown(); srv.server_close()
+        good = bool(okd and url.endswith("/welcome"))
+        wins += good
+        if good:
+            times.append(dt)
+        print(f"drill {i + 1}/{drill_n} ({'captcha' if i % 2 else 'plain'}): {'OK' if good else 'MISS'} {dt:.0f}s {noted}", flush=True)
+    med = sorted(times)[len(times) // 2] if times else 0
+    print(f"DRILL: {wins}/{drill_n} fresh fake sign-ups passed (median {med:.0f}s)")
+    T.on_hands(T.close_browser, timeout=30)
+    sys.exit(0 if wins == drill_n else 1)
 t0 = time.time()
 def run1():
     b = T.browser()
