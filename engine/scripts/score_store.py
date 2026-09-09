@@ -109,50 +109,58 @@ try:
     check("refunding a shipped order: its margin disappears AND the fee, postage and goods are lost", n2["refunded"] == 1 and abs((p0 - n2["profit"]) - (margin_before + fee + post + goods)) < 0.05, f"profit {p0} → {n2['profit']}, losses {n2['losses']}")
     a, b = S.propose("stock", "x", 1, "t"), S.propose("stock", "y", 1, "t")
     check("two proposals in the same millisecond get different ids", a["id"] != b["id"]); S.reject(a["id"]); S.reject(b["id"])
-    # 4. the AI reads its own store like any shop
-    T = Tasks(); F = ShopFacts(tasks=T, log=lambda k, **f: None)
-    rep = F.learn(url)
-    check("/shop on the store: help facts + 5 product pages (no model)", len(F.products) == 5 and F.covers("returns & refunds") and F.covers("delivery time") and F.covers("where we ship"), f"{len(F.facts)} facts")
-    lamp = next(p for p in F.products if "Lamp" in p["name"])
-    check("product page details kept word for word", any("no power adapter included" in d for d in lamp["details"]) and lamp["price"] == "€ 39,00")
-    check("matches 'the cork case' to the product, not 'phone number'", F.match_products("Does the cork case fit the iPhone 14?") and not F.match_products("Is there a phone number?"))
-    # 5. the operator works the store front (model-free rules)
-    O = Operator(None, tasks=T, log=lambda k, **f: None)
-    O._browser_open(url); seen = O._see("browser")
-    step = O._obvious_step("Open the first product on the page and tell me its price", seen)
-    ok = step and step["step"] == "click" and "Bamboo" in step["target"]
-    if ok:
-        O._act_click("browser", step["target"], seen); s2 = O._see("browser"); ok = "12,90" in s2["fulltext"]
-    check("operator: 'open the first product' → toothbrush set page with its price", ok)
-    O.history = []
-    O._browser_open(url + "p/led-desk-lamp"); seen = O._see("browser")
-    from agent.operator import DANGER
-    labels = " | ".join(str(it) for it in seen["items"])
-    check("'Add to cart' is visible to the operator and classed as a money/cart action (owner is asked first)", "Add to cart" in labels and bool(DANGER.search("Add to cart")) and not DANGER.search("Details"))
-    T.close_browser()
-    # 6. customer replies from store customers (model)
-    if use_model:
-        from agent.planner import Planner
-        P = Planner(); I2 = Inbox(planner=P, shopfacts=F, store=S)
-        paid2 = next(o for o in S.data["orders"] if o["status"] == "paid")
-        good = 0; rows = [
-            ("c@example.com", "How long does delivery to Germany take and what does it cost?", r"4.6 business days|4–6", r"7-15"),
-            ("c@example.com", "Is the LED desk lamp still in stock? The page says only a few left.", r"3 left|only 3|few left|in stock|check", r"7-15"),
-            ("c@example.com", "Does the desk lamp come with a power adapter?", r"\bno\b|not included|without", r"yes, it comes"),
-            ("c@example.com", "Can I still return the mug after 3 weeks? Who pays the return shipping?", r"30 days", r"7-15"),
-            ("c@example.com", "Do you ship to Switzerland? I'd like the cork phone case.", r"not yet|2027|do not ship|don't ship|only .*eu", r"yes, we ship"),
-            (paid2["customer"]["email"], f"Hi, where is my order {paid2['n']}? Nothing arrived yet.", r"warehouse|not (yet |been )?shipped|has not (yet )?left", r"7-15|will check|has been shipped|on its way"),
-            (shipped["customer"]["email"], f"Where is order {shipped['n']}? Can you give me a tracking number?", shipped["tracking"].lower(), r"7-15|will check|warehouse"),
-            (shipped["customer"]["email"], f"I want to cancel order {shipped['n']}, I changed my mind.", r"cannot be cancel|can no longer|already (been )?shipped|already left", r"will be cancelled|has been cancelled"),
-        ]
-        try:
-            for frm, msg, must, mustnot in rows:
-                d = I2.draft({"id": "t", "from": frm, "channel": "store", "text": msg}); low = d["text"].lower()
-                ok = re.search(must, low) and not re.search(mustnot, low) and not d["checks"]; good += bool(ok)
-                print(f"   {'ok ' if ok else 'BAD'} {msg[:55]} -> {d['text'].split(chr(10)+chr(10))[1][:150 if ok else 600]!r} {d['checks']}", flush=True)
-        finally:
-            P.stop()
-        check("store customers answered from the store's own pages and order system (≥ 7/8)", good >= 7, f"{good}/8")
+    T = Tasks()
+    try:
+        T.browser(); BROWSER_OK = True
+    except Exception:
+        BROWSER_OK = False
+        print("(no browser here — section 4 skipped; run on the PC for the full score)")
+    if BROWSER_OK:
+        # 4. the AI reads its own store like any shop (needs a browser)
+        F = ShopFacts(tasks=T, log=lambda k, **f: None)
+        rep = F.learn(url)
+        check("/shop on the store: help facts + 5 product pages (no model)", len(F.products) == 5 and F.covers("returns & refunds") and F.covers("delivery time") and F.covers("where we ship"), f"{len(F.facts)} facts")
+        lamp = next(p for p in F.products if "Lamp" in p["name"])
+        check("product page details kept word for word", any("no power adapter included" in d for d in lamp["details"]) and lamp["price"] == "€ 39,00")
+        check("matches 'the cork case' to the product, not 'phone number'", F.match_products("Does the cork case fit the iPhone 14?") and not F.match_products("Is there a phone number?"))
+    if BROWSER_OK:   # sections 5-6 need the browser too
+        # 5. the operator works the store front (model-free rules)
+        O = Operator(None, tasks=T, log=lambda k, **f: None)
+        O._browser_open(url); seen = O._see("browser")
+        step = O._obvious_step("Open the first product on the page and tell me its price", seen)
+        ok = step and step["step"] == "click" and "Bamboo" in step["target"]
+        if ok:
+            O._act_click("browser", step["target"], seen); s2 = O._see("browser"); ok = "12,90" in s2["fulltext"]
+        check("operator: 'open the first product' → toothbrush set page with its price", ok)
+        O.history = []
+        O._browser_open(url + "p/led-desk-lamp"); seen = O._see("browser")
+        from agent.operator import DANGER
+        labels = " | ".join(str(it) for it in seen["items"])
+        check("'Add to cart' is visible to the operator and classed as a money/cart action (owner is asked first)", "Add to cart" in labels and bool(DANGER.search("Add to cart")) and not DANGER.search("Details"))
+        T.close_browser()
+        # 6. customer replies from store customers (model)
+        if use_model:
+            from agent.planner import Planner
+            P = Planner(); I2 = Inbox(planner=P, shopfacts=F, store=S)
+            paid2 = next(o for o in S.data["orders"] if o["status"] == "paid")
+            good = 0; rows = [
+                ("c@example.com", "How long does delivery to Germany take and what does it cost?", r"4.6 business days|4–6", r"7-15"),
+                ("c@example.com", "Is the LED desk lamp still in stock? The page says only a few left.", r"3 left|only 3|few left|in stock|check", r"7-15"),
+                ("c@example.com", "Does the desk lamp come with a power adapter?", r"\bno\b|not included|without", r"yes, it comes"),
+                ("c@example.com", "Can I still return the mug after 3 weeks? Who pays the return shipping?", r"30 days", r"7-15"),
+                ("c@example.com", "Do you ship to Switzerland? I'd like the cork phone case.", r"not yet|2027|do not ship|don't ship|only .*eu", r"yes, we ship"),
+                (paid2["customer"]["email"], f"Hi, where is my order {paid2['n']}? Nothing arrived yet.", r"warehouse|not (yet |been )?shipped|has not (yet )?left", r"7-15|will check|has been shipped|on its way"),
+                (shipped["customer"]["email"], f"Where is order {shipped['n']}? Can you give me a tracking number?", shipped["tracking"].lower(), r"7-15|will check|warehouse"),
+                (shipped["customer"]["email"], f"I want to cancel order {shipped['n']}, I changed my mind.", r"cannot be cancel|can no longer|already (been )?shipped|already left", r"will be cancelled|has been cancelled"),
+            ]
+            try:
+                for frm, msg, must, mustnot in rows:
+                    d = I2.draft({"id": "t", "from": frm, "channel": "store", "text": msg}); low = d["text"].lower()
+                    ok = re.search(must, low) and not re.search(mustnot, low) and not d["checks"]; good += bool(ok)
+                    print(f"   {'ok ' if ok else 'BAD'} {msg[:55]} -> {d['text'].split(chr(10)+chr(10))[1][:150 if ok else 600]!r} {d['checks']}", flush=True)
+            finally:
+                P.stop()
+            check("store customers answered from the store's own pages and order system (≥ 7/8)", good >= 7, f"{good}/8")
 finally:
     ST.stop(S)
 ok = sum(1 for _, v in checks if v)

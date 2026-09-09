@@ -22,7 +22,11 @@ S = ShopFacts(tasks=T, log=lambda k, **f: None)
 if nofacts:
     S.forget(); S = None
 else:
-    print(S.learn("file://" + os.path.abspath("tests/pages/shop.html")).splitlines()[1], flush=True)
+    rep = S.learn("file://" + os.path.abspath("tests/pages/shop.html"))
+    if rep.startswith("I couldn't read") or rep.startswith("I have no browser"):
+        print("this test needs a browser (playwright): " + rep + " (counts as SKIP in the battery)")
+        sys.exit(2)
+    print(rep.splitlines()[1], flush=True)
     T.on_hands(T.close_browser, timeout=30)                      # Playwright lives on the hands thread
 I = Inbox(planner=P, brain=Brain(), shopfacts=S)
 ok = 0; t0 = time.time(); notes = []
