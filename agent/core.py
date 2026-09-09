@@ -83,7 +83,7 @@ Forward me any customer message (or write /customer <their text>) → I draft th
 "rehearse posting about <topic>" — a dry run on my own practice network: log in, publish with photo, learn the limits, answer comments (nothing public) · /rehearse map — what I learned about each interface
 "build a website for <a place>" — I write the copy, build the pages, check them in my browser and send you the files · "start auto training on website building" — I practise on random real places from the map (watch it live) · "stop training"
 while I work: "status" / "what are you doing" · "why" · "hurry up" · "stop" · a change ("only Italy") · a new request (queued) — no need to wait
-/lessons — what I learned from my last jobs (I reflect after every one)
+/lessons — what I learned from my last jobs (I reflect after every one) · /thinking — what is on my mind right now
 /ideas — business ideas I jotted from short videos (/ideas <topic> = go watch some now) · /study [topic] — find and keep a good PDF in my library
 /accounts — the site accounts I created with my own e-mail (I sign up when a task needs it and tell you in one line; never money sites)
 /library — the documents I've written (seller checks, research, comparisons); they also land in my Drive folder
@@ -147,6 +147,7 @@ class Agent:
         self.sites_built = 0
         self.last_site = None                                     # the last website brief, so "make it in Italian too" knows which site
         self.mind = Mind(planner=self.planner, log=self.log, pace=self.pace, viewer=self.viewer)
+        self.viewer.thinker = self.mind
         self.talk = Talk(memory=self.memory, mind=self.mind, library=library, inbox=self.inbox, store=self.store, log=self.log, planner=self.planner)
         self.talk.selftalk.busy_text = lambda: self.busy
         self.talk.selftalk.pace = self.pace
@@ -912,6 +913,8 @@ class Agent:
             return "🎭 Rehearsing: I draft a post, log into my practice network with my own account, publish it there with a photo, read the platform's reaction, then answer the comments. One report line when done."
         if low.startswith("/lessons") or re.fullmatch(r"\W*(what did you learn( from your (last )?jobs)?|lessons?( learned)?|cosa hai imparato)\W*", low):
             return self.mind.lessons_text()
+        if low.startswith("/thinking"):
+            return self.mind.thinking_text()
         if low.startswith("/ideas"):
             arg = text[6:].strip()
             if arg:

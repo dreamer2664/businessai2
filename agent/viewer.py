@@ -38,6 +38,8 @@ PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>Business AI �
  #plan{background:#161616;border-bottom:1px solid #333;padding:8px 10px;font-size:13px;display:none}
  #plan .goal{color:#fff;font-weight:600}#plan ol{margin:6px 0 0 18px;padding:0}#plan li{padding:1px 0;color:#999}
  #plan li.doing{color:#ffd166}#plan li.done{color:#6c6;text-decoration:line-through}
+#think{background:#161616;border-bottom:1px solid #333;padding:8px 10px;font-size:13px;display:none}
+#think .goal{color:#fff;font-weight:600}
  #timer{float:right;font-variant-numeric:tabular-nums;font-size:22px;font-weight:700;padding:0 6px;border-radius:6px}
  #timer.ok{color:#6c6}#timer.warn{color:#ffd166}#timer.late{color:#f66;animation:blink 1s step-end infinite}#timer.slow{color:#9ad;font-size:15px}
  @keyframes blink{50%{opacity:.4}}
@@ -46,7 +48,7 @@ PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>Business AI �
 <header><b>Business AI — live</b><span id="task">…</span><span id="badge" class="badge idle">starting</span>
 <span id="url"></span><button onclick="toggle()" id="tg">show what it reads</button></header>
 <main><div id="left" style="flex-direction:column"><div id="plan"></div><img id="shot" alt="(no screenshot yet — the browser opens when a task starts)"><pre id="text"></pre></div>
-<aside id="events"></aside></main>
+<aside><div id="think"></div><div id="events"></div></aside></main>
 <script>
 let showText=false,lastShot=null;
 function toggle(){showText=!showText;text.style.display=showText?'block':'none';shot.style.display=showText?'none':'block';
@@ -61,11 +63,16 @@ function renderPlan(p){const el=document.getElementById('plan');if(!p||!p.goal){
  if(p.steps&&p.steps.length){h+='<ol>';p.steps.forEach((s,i)=>{const c=i<p.step?'done':i===p.step?'doing':'';h+='<li class="'+c+'">'+(c==='doing'?'▶ ':'')+esc(s)+'</li>';});h+='</ol>';}
  if(p.note){h+='<div style="color:#bbb;margin-top:4px">'+esc(p.note)+'</div>';}
  el.innerHTML=h;}
+function renderThink(t){const el=document.getElementById('think');if(!t){el.style.display='none';return;}el.style.display='block';
+ let h='<div class=goal>🧠 Thinking</div><div>'+esc(t.why)+'</div><div style="color:#bbb">'+esc(t.status)+'</div>';
+ h+='<div style="color:#888">Queue: '+esc(t.queue)+'</div>';
+ if(t.lessons&&t.lessons.length){h+='<div style="margin-top:4px;color:#9ad">Lessons:</div>';t.lessons.forEach(l=>{h+='<div>• '+esc(l)+'</div>';});}
+ el.innerHTML=h;}
 function esc(x){return String(x).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
 async function tick(){try{const s=await (await fetch('state.json',{cache:'no-store'})).json();
  task.textContent=s.task?('Task: '+s.task):'(no task running)';
  badge.textContent=s.idle?'browser closed':s.status;badge.className='badge '+(s.idle?'idle':s.status);
- url.textContent=s.title?(s.title+' — '+s.url):'';renderPlan(s.plan);
+ url.textContent=s.title?(s.title+' — '+s.url):'';renderPlan(s.plan);renderThink(s.think);
  const ev=document.getElementById('events');ev.innerHTML='';
  for(const e of s.events){const d=document.createElement('div');d.className='ev';const t=document.createElement('time');t.textContent=e.t;
   d.appendChild(t);d.appendChild(document.createTextNode(e.text));ev.appendChild(d);}
@@ -121,6 +128,7 @@ class Viewer:
         self.status, self.tabs, self.task = "idle", 0, None
         self.plan = None                      # {"goal", "steps", "step", "deadline", "deadline_min", "budget_until", "note"}
         self.listener = None                  # Mind.on_event(kind, fields) — the agent's own journal listens to what the screen shows
+        self.thinker = None                   # Mind (item 9): state() pulls its live beliefs into the thinking panel
         self.browser_open = False
         self.events = collections.deque(maxlen=200)
         self._seen = 0
@@ -151,8 +159,15 @@ class Viewer:
                 pass
 
     def state(self):
+        think = None
+        if self.thinker is not None:
+            try:
+                think = self.thinker.think_snapshot()
+            except Exception:
+                think = None
         return {"url": self.url, "title": self.title, "status": self.status, "tabs": self.tabs, "task": self.task,
-                "plan": self.plan, "shot_time": self.shot_time, "idle": not self.browser_open, "events": list(self.events)[:60]}
+                "plan": self.plan, "shot_time": self.shot_time, "idle": not self.browser_open, "events": list(self.events)[:60],
+                "think": think}
 
     # ---- the plan panel (milestone 13) ----------------------------------------
     def show_plan(self, goal, steps, pace=None, note=""):

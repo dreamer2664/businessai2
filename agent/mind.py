@@ -366,6 +366,27 @@ class Mind:
             return "No lessons yet — I write one after every job."
         return "🧠 What I learned from my last jobs:\n" + "\n".join(f"• {r['t'][5:16].replace('T', ' ')} · {r['lesson']}" for r in reversed(recs))
 
+    def think_snapshot(self):
+        """Live beliefs for the thinking panel (item 9): why + status + recent lessons + queue."""
+        recs = _load(LESSONS, limit=3)
+        if self.queue:
+            highs = sum(1 for e in self.queue if e.get("prio", 1) == 0)
+            q = f"{len(self.queue)} waiting" + (f" ({highs} HIGH)" if highs else "")
+        else:
+            q = "empty"
+        return {"why": self.why_line()[:300], "status": self.status_line()[:300],
+                "lessons": [r.get("lesson", "")[:160] for r in reversed(recs)],
+                "queue": q}
+
+    def thinking_text(self):
+        """The panel in plain words — one source for the viewer, /thinking, and any agent reader."""
+        s = self.think_snapshot()
+        lines = ["\U0001F9E0 What I'm thinking:", "Why: " + s["why"], s["status"], "Queue: " + s["queue"] + "."]
+        if s["lessons"]:
+            lines.append("Recent lessons:")
+            lines += ["\u2022 " + l for l in s["lessons"]]
+        return "\n".join(lines)
+
     def stats_text(self):
         recs = _load(LESSONS)
         if not recs:
