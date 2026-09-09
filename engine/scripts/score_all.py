@@ -40,7 +40,7 @@ CONFIG = {
     "score_queue": ([], 120, False), "score_rehearsal": ([], 300, True),
     "score_research": ([], 120, False),
     "score_youtube": ([], 120, False),
-    "score_dropship": ([], 120, False),
+    "score_dropship": ([], 120, False), "score_disk": ([], 120, False),
     "score_think": ([], 120, False),
     "score_gmail": ([], 120, False),
     "score_markets": ([], 180, False),

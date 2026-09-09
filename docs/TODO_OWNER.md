@@ -68,3 +68,8 @@ Reality check on 2026-09-09 with the real browser:
 - 2026-09-09 (night, later): I shipped (think 21/21; the live screen shows plan / did / check per step, lessons in own words).
   **A–I all ticked.** Still open from the owner's list: smarter scraper, multi-source search, watch disk; Google client to re-enable
   (progress-Doc entries 7 + 8 pending on that). PC is on 10fc41d — the pull line brings everything.
+- 2026-09-10: "watch disk" done as a habit, not a note: agent/housekeeping.py measures `release / state / ~/.cache`
+  (the owner's du line) every 6 h in the idle loop, prunes only rebuildable things (day logs > 30 d, screenshots > 7 d,
+  raw pack fetches > 14 d, model log capped at 2 MB, step journal at 2 000 lines; pip cache too when space is low),
+  never the library / notes / models / browser; `/status` has a disk line; `/disk` explains, `/disk clean` acts;
+  below 2 GB free the owner is told once a day. Sandbox today: 19 GB free; release 83 MB, state 1.8 MB, cache 369 MB. disk 10/10.

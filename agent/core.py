@@ -48,6 +48,8 @@ from .study import Study
 from .sitebuilder import SiteBuilder, KINDS as SITE_KINDS
 from .rehearsal import Rehearsal
 from .mind import Mind
+from .housekeeping import Housekeeping
+from . import housekeeping as _hk
 from .progress import Progress
 from . import projects as _projects
 from . import mailbox as _mailbox
@@ -86,7 +88,7 @@ Forward me any customer message (or write /customer <their text>) → I draft th
 "rehearse posting about <topic>" — a dry run on my own practice network: log in, publish with photo, learn the limits, answer comments (nothing public) · /rehearse map — what I learned about each interface
 "build a website for <a place>" — I write the copy, build the pages, check them in my browser and send you the files · "start auto training on website building" — I practise on random real places from the map (watch it live) · "stop training"
 while I work: "status" / "what are you doing" · "why" · "hurry up" · "stop" · a change ("only Italy") · a new request (queued) — no need to wait
-/lessons — what I learned from my last jobs (I reflect after every one) · /thinking — what is on my mind right now
+/lessons — what I learned from my last jobs (I reflect after every one) · /thinking — what is on my mind right now · /disk [clean] — space on my machine
 /ideas — business ideas I jotted from short videos (/ideas <topic> = go watch some now) · /study [topic] — find and keep a good PDF in my library
 /accounts — the site accounts I created with my own e-mail (I sign up when a task needs it and tell you in one line; never money sites) · /accounts allow <site>
 /library — the documents I've written (seller checks, research, comparisons); they also land in my Drive folder · /progress — today's log in Google Docs (every job writes there as it goes; long jobs get their own page) · /projects — the ideas I'm working on in free windows ('new project: …' adds one) · /mail — my inbox sorted into Verification / Leads / Alerts / Newsletters ('tidy the inbox' now, 'any leads?')
@@ -177,6 +179,7 @@ class Agent:
         self.sites_built = 0
         self.last_site = None                                     # the last website brief, so "make it in Italian too" knows which site
         self.mind = Mind(planner=self.planner, log=self.log, pace=self.pace, viewer=self.viewer)
+        self.house = Housekeeping(log=self.log)                              # watch disk: measure, prune what is safe, warn once a day
         self.viewer.thinker = self.mind
         self.talk = Talk(memory=self.memory, mind=self.mind, library=library, inbox=self.inbox, store=self.store, log=self.log, planner=self.planner)
         self.talk.selftalk.busy_text = lambda: self.busy
@@ -1050,6 +1053,12 @@ class Agent:
             return self.mind.lessons_text()
         if low.startswith("/thinking"):
             return self.mind.thinking_text()
+        if low.startswith("/disk") or re.fullmatch(r"\W*(how much (disk|disk space|space|room)( is left| do you have| have you got| is free)?|disk space\??|is the disk full\??|quanto spazio (hai|resta|c'è|hai (ancora|libero))\??|il disco è pieno\??)\W*", low):
+            if "clean" in low or "pulisci" in low:
+                r = self.house.prune(aggressive=True)
+                return (f"🧹 Cleaned {_hk.human(r['freed'])}: " + "; ".join(r["items"][:6]) + (f" … +{len(r['items']) - 6} more" if len(r["items"]) > 6 else "") if r["items"]
+                        else "🧹 Nothing to clean — logs, screenshots and caches are all within their limits.") + "\n" + self.house.status_line()
+            return self.house.text()
         if low.startswith("/ideas"):
             arg = text[6:].strip()
             if arg:
@@ -2495,6 +2504,12 @@ class Agent:
             return
         self.last_idle_check = now
         self.google_check()
+        try:
+            warn = self.house.check()                                          # every 6 h: measure + prune; warns at most once a day
+            if warn:
+                self.notify(warn)
+        except Exception as e:
+            self.log("disk_check_failed", error=str(e)[:80])
         if self.fallback.line_check_due(_dt.datetime.now().hour, _dt.date.today().isoformat()):
             threading.Thread(target=lambda: self.fallback.line_check(_dt.date.today().isoformat(),
                              self.status_text().splitlines()[1]), daemon=True).start()
@@ -2765,7 +2780,8 @@ class Agent:
                 + s(lambda: f"{self.pace.text()}" + (f" · plan: {self.active_brief['goal'][:60]} (step {self.viewer.plan['step'] + 1 if self.viewer.plan else '?'}/{len(self.active_brief['steps'])})" if self.active_brief else ""), "pace") + "\n"
                 + s(lambda: f"thinking: {self.mind.stats_text()}" + (f" · security checks: {self.tasks.captcha_stats['passed']} passed by myself, {self.tasks.captcha_stats['skipped']} skipped, {self.tasks.captcha_stats['owner']} handed to you" if self.tasks.captcha_stats["tried"] else ""), "mind") + "\n"
                 + s(lambda: f"owner: {'pinned' if self.owner_id else 'not yet seen'} · pending questions: {len(self.pending)} · busy: {self.busy or 'no'}", "owner") + "\n"
-                + s(lambda: f"live screen: {self.viewer.address()} (on the machine I run on) · watch: {'on' if self.watch else 'off'}", "screen"))
+                + s(lambda: f"live screen: {self.viewer.address()} (on the machine I run on) · watch: {'on' if self.watch else 'off'}", "screen") + "\n"
+                + s(self.house.status_line, "disk"))
 
     def selftest(self):
         a = self.ask("Self-test (the buttons mean nothing, just checking that your tap reaches me): tap one",
