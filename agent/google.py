@@ -590,18 +590,27 @@ class Google:
                 idx = self._doc_end(doc_id)
                 continue
             text = str(payload) + "\n"
+            n = _len16(text)                                   # Docs indexes count UTF-16 units: 📝 🔥 🛒 are 2 each, not 1
             pending.append({"insertText": {"location": {"index": idx}, "text": text}})
+            for m in re.finditer(r"https?://[^\s)\]>\"']+", text):   # bare URLs become real links (the API never auto-links)
+                a, b_ = idx + _len16(text[:m.start()]), idx + _len16(text[:m.end()])
+                pending.append({"updateTextStyle": {"range": {"startIndex": a, "endIndex": b_}, "textStyle": {"link": {"url": m.group(0)}}, "fields": "link"}})
             if kind in ("h1", "h2"):
                 pending.append({"updateParagraphStyle": {
-                    "range": {"startIndex": idx, "endIndex": idx + len(text)},
+                    "range": {"startIndex": idx, "endIndex": idx + n},
                     "paragraphStyle": {"namedStyleType": "HEADING_1" if kind == "h1" else "HEADING_2"},
                     "fields": "namedStyleType"}})
             elif kind == "bullet":
                 pending.append({"createParagraphBullets": {
-                    "range": {"startIndex": idx, "endIndex": idx + len(text)},
+                    "range": {"startIndex": idx, "endIndex": idx + n},
                     "bulletPreset": "BULLET_DISC_CIRCLE_SQUARE"}})
-            idx += len(text)
+            idx += n
         flush()
+
+
+def _len16(text):
+    """Length in UTF-16 code units — what the Docs API means by 'index'."""
+    return len(text.encode("utf-16-le")) // 2
 
 
 class _Catcher:

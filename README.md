@@ -77,6 +77,9 @@ Three ways, all free and local:
    Chrome opens visibly, slowed to 250 ms per action so you can follow the cursor. Without a display it falls back to
    invisible mode automatically. The window stays open between tasks and closes itself after 10 idle minutes.
 Try it without Telegram: `python3 -m agent.viewer --demo` (runs a few read-only tasks in a loop).
+4. **Google Docs** — with Google connected, every day gets a *day log* Doc (Drive → Progress) and every long job its own
+   *job log* Doc (plan, each step as it happens, snags, your changes, result, "still on it" heartbeat); `/progress` gives
+   today's link. Finished jobs land in Drive as native Docs (tables, links) from per-kind templates. [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## Customer messages (milestone 5, practice channel)
 - `agent/inbox.py` reads `state/inbox.jsonl`, classifies each message (order status, damaged, return, cancel, discount,

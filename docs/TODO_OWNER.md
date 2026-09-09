@@ -22,8 +22,12 @@ Reality check on 2026-09-09 with the real browser:
 - [x] C. YouTube done right (2026-09-09: video.py reads ytInitialData — search with sort/period filters, top comments from the same /next JSON the page loads, hot_now() = most-watched uploads of the week with the honest note; document with table + top comment; fixtures in tests/fixtures/yt_*; live check passed from the sandbox — PC check still worth doing). Trending page itself stays hidden from visitors; the browser feed is only a fallback. — search/trending readers parse ytInitialData (ids, titles, channel,
       views, published), top comment per video from the watch page, honest "trending is hidden from visitors → here is
       the search-by-recency fallback". Fixtures from real pages; live check on the PC.
-- [ ] D. Google Docs reports — the native Docs writer exists; per-type templates (trending table, deal alert,
-      research cards); every finished job gets its Doc link in the chat; heartbeat Doc for long sessions.
+- [x] D. Google Docs reports (2026-09-09 night: agent/progress.py — day log Doc in Drive/Progress + job log Doc for slow/long/quiet
+      jobs or after 20 min, steps/snags/changes/result + "still on it" heartbeat, /progress command; Templates write native
+      Docs for research / trending / seller check / site / note, used by run_task and the seller check; docs_write_blocks
+      fixed for emoji (UTF-16 ranges) and links; docs/PROGRESS.md; progress 16/16 (+1 live), docs_native 7→9) — the native
+      Docs writer exists; per-type templates (trending table, deal alert, research cards); every finished job gets its Doc
+      link in the chat; heartbeat Doc for long sessions.
 - [ ] E. Time: "at least N hours" = a floor (the job keeps going, deeper reading + project work, never idle filler),
       "at most / in N" = a ceiling, unspecified = the agent picks and says why. Project list: brainstorms become
       projects (state/projects.json), the next free window continues them.
@@ -42,3 +46,4 @@ Reality check on 2026-09-09 with the real browser:
 - 2026-09-09: list written after the audit; A/B/C first because they are what the owner sees every day.
 - 2026-09-09 (evening): ROOT CAUSE of months of 'answers only while someone works on it': Windows stops the WSL VM 60 s after the last terminal closes (journal: Stopping businessai.service after each command; -- Boot -- on the next). Fix in docs/INSTALL_WINDOWS.md §4 (.wslconfig vmIdleTimeout=-1 + keeper scheduled task). The sandbox has the same symptom for a different reason (processes suspended between turns) → the bot's home is the PC only.
 - 2026-09-09 (evening): A proven live with the owner; B + C shipped (youtube 12→19, brief 34→39, talk +3, fallback 17→20). Next: D (Doc templates + heartbeat doc), E (time floors/ceilings, projects).
+- 2026-09-09 (night): F shipped (markets 40/40, sellers 34/34, subito live e2e), D shipped (progress 16/16 live-verified). Next: E (time floor + project list), then G/H/I.

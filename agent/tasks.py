@@ -320,6 +320,7 @@ class Tasks:
             self.memory.note("research", topic, brief or out, [u for _, u, _ in opened])
         if want_doc and opened:
             self.last_doc = self._research_doc(topic, brief, opened, images, change=change, extra_urls={u for _, u, _ in extra})
+            self.last_native = ("research", {"topic": topic, "summary": brief or "", "pages": [{"title": t, "url": u, "points": list(ks)} for t, u, ks in opened]})
             out = ((f"Research: {topic}\n\n{brief}" if brief else f"Research: {topic} — {len(opened)} pages read; the document has the key points per page with links and pictures.") +
                    (f"\nYou added “{change}” while I worked: " + (f"{len(extra)} page(s) on it are in the document, marked." if extra else "I searched for it but found nothing solid.") if change else "") +
                    f"\n({len(opened)} pages read in {time.time() - t0:.0f}s)")
@@ -679,6 +680,7 @@ class Tasks:
                                facts={"Channel": v.get("channel", ""), "Uploaded": v.get("published", ""), "Length": v.get("length", ""),
                                       "Top comment": (f"{tc['author']} ({tc['likes']:,} ♥): {tc['text']}" if tc else ("(comments off or not readable)" if with_comments else ""))})
                 self.last_doc = doc.save("youtube-hot-" + (topic[:30] or "week"))
+                self.last_native = ("trending", {"title": doc.title, "note": note, "videos": vids})
                 self.log("doc_saved", title=doc.title, options=len(vids))
             except Exception as e:
                 self.log("trending_doc_failed", error=str(e)[:120])
@@ -873,12 +875,14 @@ class Tasks:
     # ---- dispatcher ----------------------------------------------------
     want_doc = False          # set by the agent per job: the owner asked for a document (links + pictures), not a chat dump
     last_doc = None           # path of the last document written by research/compare
+    last_native = None        # (kind, payload) for the native Google Doc template of the last document (progress.Templates)
     owner_change = ""         # what the owner said mid-job ("also look at prices in germany") — research reads one more page for it
 
     def run(self, command, want_doc=None):
         if want_doc is not None:
             self.want_doc = bool(want_doc)
         self.last_doc = None
+        self.last_native = None
         try:
             return self.on_hands(self._run, command)
         finally:

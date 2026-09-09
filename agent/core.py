@@ -48,6 +48,7 @@ from .study import Study
 from .sitebuilder import SiteBuilder, KINDS as SITE_KINDS
 from .rehearsal import Rehearsal
 from .mind import Mind
+from .progress import Progress
 
 
 def money_list(orders):
@@ -86,7 +87,7 @@ while I work: "status" / "what are you doing" · "why" · "hurry up" · "stop" �
 /lessons — what I learned from my last jobs (I reflect after every one) · /thinking — what is on my mind right now
 /ideas — business ideas I jotted from short videos (/ideas <topic> = go watch some now) · /study [topic] — find and keep a good PDF in my library
 /accounts — the site accounts I created with my own e-mail (I sign up when a task needs it and tell you in one line; never money sites) · /accounts allow <site>
-/library — the documents I've written (seller checks, research, comparisons); they also land in my Drive folder
+/library — the documents I've written (seller checks, research, comparisons); they also land in my Drive folder · /progress — today's log in Google Docs (every job writes there as it goes; long jobs get their own page)
 /screen · /watch on|off — see my browser · /status · /selftest
 Browsing is read-only: I never log in, pass CAPTCHAs, buy or post. Money, public posts and customer messages will always need your OK."""
 
@@ -117,6 +118,7 @@ class Agent:
             self.owner_id = int(self.state["owner_id"])
         self.pending = {}          # question_id -> {"event": Event, "answer": str|None}
         self.started = time.time()
+        self._last_doc_link = None            # the Drive link of the last document handed over (goes into the progress log)
         self.brain = brain.Brain()
         self.viewer = Viewer(on_step=self._on_step).start()
         self.watch = False
@@ -156,7 +158,12 @@ class Agent:
         self.talk.selftalk.busy_text = lambda: self.busy
         self.talk.selftalk.pace = self.pace
         self.talk.selftalk.version = VERSION
-        self.viewer.listener = self.mind.on_event
+        self.progress = Progress(google=self.google, log=self.log)      # item D: the owner follows long jobs in a Google Doc
+
+        def _fan_out(kind, fields):
+            self.mind.on_event(kind, fields)
+            self.progress.on_event(kind, fields)
+        self.viewer.listener = _fan_out
         self.stop_flag = False
         self.rehearsal = Rehearsal(self.tasks, accounts=self.accounts, social=self.social, inbox=self.inbox, log=self.log, viewer=self.viewer, eyes=self.eyes)
         self.stage = None                   # the rehearsal network (tests/social/server.py) once started
@@ -1018,6 +1025,12 @@ class Agent:
             return "Looking for a good PDF to learn from" + (f" about {arg}" if arg else "") + " — I'll tell you if I keep one."
         if low.startswith("/library"):
             return library.list_text(10) + ("\n\nDrive folder: " + self.google.folder_link() if self.google.connected() else "")
+        if low.startswith("/progress") or re.fullmatch(r"(where is|show me|send me|link to)? ?(the |your |today'?s )?(progress|day log|job log)( doc(ument)?| please)?", low.strip(" ?.!")):
+            if not self.google.connected():
+                return "My Google isn't connected here, so there is no progress document — /google connect first. Meanwhile 'status' tells you what I'm doing."
+            _, day = self.progress.day_doc()
+            job = self.progress.job.get("link") if self.progress.job else None
+            return (f"📝 Today's log: {day}" if day else "No day log yet (it starts with the first job).") + (f"\nCurrent job: {job}" if job else ("\nThe running job writes into the day log (no separate page — it's a short one)." if self.progress.job else ""))
         if low.startswith("/accounts") or low.startswith("/account"):
             arg = re.sub(r"^/accounts?\s*", "", low).strip()
             if arg.startswith("allow "):
@@ -1059,6 +1072,36 @@ class Agent:
             self.notify(f"📧 Nothing with a code{' from ' + hint if hint else ''} in the last 30 minutes (I looked 6 times over 2 minutes). Ask me again when it should have arrived, or check the spam folder.")
         except Exception as e:
             self.notify(f"📧 Gmail check failed: {str(e)[:120]}")
+
+    def hand_over_doc(self, path, native=None, folder="Research"):
+        """The document goes to Drive: as a native Google Doc from the per-kind template when there is one (item D),
+        else the HTML converted. Returns the link or ''. Never raises."""
+        if not self.google.connected():
+            return ""
+        link = ""
+        if native:
+            try:
+                from .progress import Templates
+                kind, payload = native
+                fn = getattr(Templates, kind, None)
+                blocks = fn(**payload) if fn else None
+                if blocks:
+                    title = blocks[0][1] if blocks and blocks[0][0] == "h1" else (payload.get("title") or payload.get("topic") or "Business AI document")
+                    d = self.google.docs_create(str(title)[:120], folder=folder)
+                    self.google.docs_write_blocks(d["id"], blocks)
+                    link = d["link"]
+                    self.log("native_doc", kind=kind, link=link)
+            except Exception as e:
+                self.log("native_doc_failed", error=str(e)[:120])
+        if not link and path:
+            try:
+                up = self.google.upload(str(path), folder=folder, convert_to_doc=True)
+                link = up["link"]
+            except Exception as e:
+                self.log("drive_upload_failed", error=str(e)[:120])
+        if link:
+            self._last_doc_link = link
+        return link
 
     def resend_last_doc(self, to_drive=False):
         """'send me the last document again' / 'upload the last document to drive'."""
@@ -1152,6 +1195,7 @@ class Agent:
             if what == "change":
                 self.mind.job["snags"].append(f"owner changed course: {text[:80]}")
                 self.mind.job["change"] = text
+                self.progress.change(text)
                 if self.mind.job.get("kind") == "seller_check":
                     self.sellers.live_change = (self.sellers.live_change + "; " + text).strip("; ")
                 elif self.mind.job.get("kind") in ("research", "compare"):
@@ -1337,6 +1381,11 @@ class Agent:
         self.viewer.show_plan(b["goal"], b["steps"], self.pace)
         kind, topic = b["kind"], b["topic"]
         self.mind.begin(b["goal"], kind, b["steps"], why=f"You asked: “{b['goal'][:100]}” — I hand you {b['deliverable']} at {b['pace']['pace']} pace.")
+        try:
+            plink = self.progress.begin(b["goal"], kind, b["steps"], pace=self.pace, long=bool(b.get("progress_doc")))
+        except Exception as e:
+            self.log("progress_begin_failed", error=str(e)[:100])
+            plink = None
         adv = self.mind.advice(kind)
         if approved:
             head = f"▶ On it: {b['goal'][:120]}" + (f"\nStep 1 — {b['steps'][0]}" if b.get("steps") else "")
@@ -1344,6 +1393,8 @@ class Agent:
             head = Brief.text(b) if not prefix else prefix + Brief.text(b)
         if adv and not approved:
             head += "\n\n🧠 From last time: " + " · ".join(adv[:2])
+        if plink:
+            head += f"\n📝 Follow along here (it fills in while I work): {plink}"
         if kind == "seller_check":
             threading.Thread(target=self.run_seller_check, args=(b,), daemon=True).start()
             return head + "\n\nStarting — you'll get the document here (and in my Drive if it's connected)."
@@ -1621,12 +1672,9 @@ class Agent:
                 return
             link = ""
             if self.google.connected():
-                try:
-                    up = self.google.upload(path, folder="Research", convert_to_doc=True)
-                    link = f"\n📄 Google Doc: {up['link']}"
-                except Exception as e:
-                    self.log("drive_upload_failed", error=str(e)[:120])
-                    link = f"\n(Drive upload failed: {str(e)[:80]} — the file is attached instead)"
+                cond = "; ".join(str(x) for x in (b.get("constraints") or []) if x)
+                link = self.hand_over_doc(path, ("seller_check", {"product": b["topic"], "summary": summary, "options": options, "conditions": cond}))
+                link = f"\n📄 Google Doc: {link}" if link else "\n(Drive upload failed — the file is attached instead)"
             self.bot.send(self.owner_id, f"✅ Done. {summary}{link}")
             self.bot.send_document(self.owner_id, str(path), caption="The full document — open it in any browser (pictures, links, verdicts).")
             self.memory.note("sellers", b["topic"], summary, [o["url"] for o in options])
@@ -2180,6 +2228,13 @@ class Agent:
                 self.mind.reflect(outcome or "", delivered=delivered)
         except Exception as e:
             self.log("reflect_failed", error=str(e)[:100])
+        try:
+            plink = self.progress.finish(outcome or "", doc_link=getattr(self, "_last_doc_link", None), delivered=delivered)
+            self._last_doc_link = None
+            if plink and self.owner_id:
+                self.bot.send(self.owner_id, f"📝 The job log: {plink}")
+        except Exception as e:
+            self.log("progress_finish_failed", error=str(e)[:100])
         for a in after:                                                   # "send it to my drive when done" → handled now
             try:
                 r = self.after_job(a)
@@ -2239,13 +2294,8 @@ class Agent:
         if path and not want_doc:                  # a doc came out anyway (e.g. seller list in a compare) → still hand it over
             want_doc = True
         if want_doc and path:
-            link = ""
-            if self.google.connected():
-                try:
-                    up = self.google.upload(path, folder="Research", convert_to_doc=True)
-                    link = f"\n📄 Google Doc: {up['link']}"
-                except Exception as e:
-                    self.log("drive_upload_failed", error=str(e)[:120])
+            link = self.hand_over_doc(path, getattr(self.tasks, "last_native", None))
+            link = f"\n📄 Google Doc: {link}" if link else ""
             self.bot.send(self.owner_id, f"✅ {out[:2500]}{link}")
             self.bot.send_document(self.owner_id, str(path), caption="The document — open it in any browser (links, pictures, key points).")
             return
@@ -2258,6 +2308,8 @@ class Agent:
                 r = self.pace.tick()
                 if r:
                     self.bot.send(self.owner_id, r)
+            if self.busy:
+                self.progress.heartbeat(self.busy)
         except Exception as e:
             self.log("clock_tick_failed", error=str(e)[:80])
 

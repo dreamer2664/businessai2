@@ -55,6 +55,17 @@ def offline():
     checks.append(("cells filled last-first (no index shift)", cells == [16, 14, 12, 10]))
     checks.append(("post-table text after table", [i for i, x in ins if x == "x\n"] == [19]))
     checks.append(("bullet preset set", bool(b) and bool(b[0].get("bulletPreset"))))
+    calls.clear()
+    g.docs_write_blocks("D", [("h2", "📝 log"), ("p", "next")])
+    reqs2 = [r for b_ in calls if b_ for r in b_.get("requests", [])]
+    ins2 = [(r["insertText"]["location"]["index"], r["insertText"]["text"]) for r in reqs2 if "insertText" in r]
+    u2 = [r["updateParagraphStyle"] for r in reqs2 if "updateParagraphStyle" in r]
+    checks.append(("emoji counts as 2 UTF-16 units (heading range + next index)", u2[0]["range"]["endIndex"] - u2[0]["range"]["startIndex"] == 7 and ins2[1][0] - ins2[0][0] == 7))
+    calls.clear()
+    g.docs_write_blocks("D", [("p", "see https://example.com/a?x=1 now")])
+    links = [r["updateTextStyle"] for b_ in calls if b_ for r in b_.get("requests", []) if "updateTextStyle" in r]
+    checks.append(("bare URLs in text become links (exact span)", len(links) == 1 and links[0]["textStyle"]["link"]["url"] == "https://example.com/a?x=1"
+                   and links[0]["range"]["endIndex"] - links[0]["range"]["startIndex"] == len("https://example.com/a?x=1")))
     bad = [name for name, ok in checks if not ok]
     for name, ok in checks:
         print(("OK   " if ok else "MISS ") + name)
