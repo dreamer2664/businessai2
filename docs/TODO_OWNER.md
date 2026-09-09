@@ -65,3 +65,6 @@ Reality check on 2026-09-09 with the real browser:
   probably the warning). Owner must re-enable it: console.cloud.google.com → project businessai-508000 → Google Auth Platform → Clients,
   or create a new Desktop-app client and hand over its JSON. Until then Drive/Docs/mailbox/progress Doc are paused; the agent now says so
   once a day in plain words instead of sending links that cannot work (gmail 9→10). Progress-Doc entry 7 (H) is pending on that.
+- 2026-09-09 (night, later): I shipped (think 21/21; the live screen shows plan / did / check per step, lessons in own words).
+  **A–I all ticked.** Still open from the owner's list: smarter scraper, multi-source search, watch disk; Google client to re-enable
+  (progress-Doc entries 7 + 8 pending on that). PC is on 10fc41d — the pull line brings everything.
