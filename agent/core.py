@@ -1521,7 +1521,7 @@ class Agent:
         self.busy = f"seller check: {b['topic'][:40]}"
         try:
             note = "Note: branded replicas are counterfeit, so these are genuine or unbranded options. " if b.get("counterfeit") else ""
-            path, summary, options = self.tasks.on_hands(self.sellers.run, b["topic"], 4, True, note, timeout=1500)
+            path, summary, options = self.tasks.on_hands(self.sellers.run, b["topic"], 4, True, note, b.get("sites") or (), timeout=1500)
             if not path:
                 self.bot.send(self.owner_id, summary)
                 return
