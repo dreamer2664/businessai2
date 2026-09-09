@@ -324,8 +324,8 @@ class Agent:
                 return
         reply = self.respond(text)
         if reply:
-            self.log("out", text=reply)
             self.bot.send(chat_id, reply)
+            self.log("out", text=reply)
 
     @staticmethod
     def _forward_name(msg):
@@ -2422,7 +2422,23 @@ class Agent:
                     else "Self-test: no tap within 5 minutes.")
 
     # ---- main loop -----------------------------------------------------
+    def _dispatch(self, u):
+        """Handle one update, THEN advance the saved offset: a death mid-handling redelivers
+        the message on restart instead of losing it (at-least-once). Handler errors are
+        contained as before, so a poison message still advances and never loops."""
+        try:
+            self.handle_update(u)
+        except Exception:
+            self.log("handler_error", trace=traceback.format_exc()[-800:])
+        self.state["offset"] = u["update_id"] + 1
+        self._save_state()
+
     def run(self, once=False):
+        lock = _take_lock(config.STATE_DIR / "agent.lock")
+        if lock is None:
+            self.log("second_instance_refused")
+            print("another instance is already running (agent.lock held) — refusing to start.")
+            sys.exit(LOCK_EXIT)
         backoff = 2
         while True:
             try:
@@ -2451,14 +2467,30 @@ class Agent:
                 self.reminders_due()
             self.idle_work()
             for u in updates:
-                self.state["offset"] = u["update_id"] + 1
-                self._save_state()
-                try:
-                    self.handle_update(u)
-                except Exception:
-                    self.log("handler_error", trace=traceback.format_exc()[-800:])
+                self._dispatch(u)
             if once and not updates:
                 return
+
+
+LOCK_EXIT = 42             # a second instance exits with this; the systemd unit must not restart it (RestartPreventExitStatus=42)
+
+
+def _take_lock(path):
+    """Exclusive non-blocking lock for single-instance polling. Returns the open file, or None if held.
+    flock releases on process death, so a stale lock is impossible."""
+    try:
+        import fcntl
+    except ImportError:
+        return open(path, "w")                      # exotic platform: single-instance unenforced
+    f = open(path, "w")
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        f.close()
+        return None
+    f.write(str(os.getpid()))
+    f.flush()
+    return f
 
 
 def main(argv):

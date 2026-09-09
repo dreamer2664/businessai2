@@ -2,7 +2,7 @@
 Drives the real Agent through a fake Telegram (no network, no model — template replies): /store open → /store day →
 customer drafts with buttons → Approve / Reject / Edit → the reply is filed on the order → /store review → Apply → the
 order ships → /store numbers, /status, /help. Everything the owner taps in the practice store, checked in ~30 s."""
-import os, re, sys, time, shutil, pathlib, threading
+import os, re, sys, time, shutil, pathlib, subprocess, threading
 sys.path.insert(0, ".")
 os.environ.pop("DISPLAY", None)
 os.environ["BAI_STATE"] = os.path.abspath("state/test_phone")
@@ -157,6 +157,32 @@ finally:
         ST.stop(A.store)
     except Exception:
         pass
+# ---- at-least-once dispatch + single instance (11:08 incident) --------------------------------
+order = []
+_real_save, _real_handle = A._save_state, A.handle_update
+A._save_state = lambda: order.append("save")
+A.handle_update = lambda u: order.append("handle")
+A.state["offset"] = 0
+A._dispatch({"update_id": 5})
+A._save_state, A.handle_update = _real_save, _real_handle
+check("dispatch: handled BEFORE the offset advances (a death redelivers, never loses)", order == ["handle", "save"] and A.state["offset"] == 6, str(order))
+def _boom(u):
+    raise RuntimeError("poison")
+A.handle_update = _boom
+A._dispatch({"update_id": 7})
+A.handle_update = _real_handle
+check("dispatch: a poison message still advances (no retry loop)", A.state["offset"] == 8)
+_lockpath = os.path.join(os.environ["BAI_STATE"], "agent.lock")
+_holder = core._take_lock(_lockpath)
+_child = "import sys; sys.path.insert(0, '.'); from agent.core import _take_lock; sys.exit(0 if _take_lock(sys.argv[1]) is None else 1)"
+r1 = subprocess.run([sys.executable, "-c", _child, _lockpath], capture_output=True, timeout=60).returncode
+_holder.close()
+r2 = subprocess.run([sys.executable, "-c", _child, _lockpath], capture_output=True, timeout=60).returncode
+try:
+    os.unlink(_lockpath)
+except OSError:
+    pass
+check("single instance: second holder refused, first released", r1 == 0 and r2 == 1, f"{r1} {r2}")
 ok = sum(1 for _, v in checks if v)
 print(f"PHONE SCORE: {ok}/{len(checks)}  ({time.time() - t0:.0f} s)", flush=True)
 os._exit(0 if ok == len(checks) else 1)
