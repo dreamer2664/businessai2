@@ -243,3 +243,6 @@ VERSION 2.0 (2026-09-08): the shop grows extras and a designer — discount code
 
 ## 2026-09-09 night marathon, item 1 (fallback contact) — done
 - New agent/fallback.py (Gmail poll+reply, allowlist, watchdog, backup bot) + core wiring (idle hook, /fallback, status line, 401 watchdog) + OWNER_EMAILS/FALLBACK_BOT_TOKEN config. Regression: full score sweep matches main baselines exactly (talk 451/460 here vs 460/460 on PC with thinking model; inbox 22/23; browser suites need playwright — all identical on main, zero regressions).
+
+## 2026-09-09 night marathon, item 10 (regression battery) — done
+- New engine/scripts/score_all.py (24 suites + practice lane, --fast/--only/--compare, SKIP-clean on env gaps, selftest 5/5). Hardened score_store (browser sections guarded, 35/35 here) + score_shopfacts (graceful SKIP). Fast battery here: 9 PASS, 2 PARTIAL (talk 451/460 = no browser/model, inbox 22/23 pre-existing), 3 SKIP, 0 FAIL.

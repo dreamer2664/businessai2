@@ -1,5 +1,9 @@
 # Scores (one line per milestone; nothing ships that lowers a score)
 
+## The battery (one command runs everything)
+`python3 engine/scripts/score_all.py [--fast] [--only NAME] [--compare] [--with-practice]`
+PASS = full marks · PARTIAL = ran, x/y · SKIP = this machine lacks the browser/model/package · FAIL/TIMEOUT = broken. Exit 0 unless FAIL/TIMEOUT or `--compare` finds a drop vs `state/scores_last.json`. Browser-needing suites SKIP cleanly where playwright is missing (sections guarded, never a crash). Self-test: `--selftest` (5/5).
+
 | set | what | score | notes |
 |---|---|---|---|
 | tests/business.txt | 55 knowledge questions, 4 blocks | **52/55** | business.kdw 5.7 MB, KDR_WIKI_READK=3 |
@@ -41,3 +45,4 @@
 | practice day | 27/27 | one integration run as the owner would type it: chat, status, quick question, website plan→change→go→zip+photo, mid-job status/queue/stop, lessons, rehearsal with approved reply, slow-mode budget, auto-training round, library/accounts/map, clean log | `timeout 900 python3 engine/scripts/practice_day.py` |
 | phone | 23/23 | (re-run after Phase 2 changes) | `timeout 240 python3 engine/scripts/score_phone.py` |
 | fallback contact | 14/14 | Gmail two-way (owner mail → normal responder → emailed answer; strangers ignored, own mail never loops, quotes stripped, subject fallback, dedupe across restarts, allow/forget validated) + Telegram-line watchdog (one alert per outage, recovery mail) + backup bot (alerts, owner /status, stranger-proof) | `python3 engine/scripts/score_fallback.py` |
+| battery | 5/5 | the runner itself: PASS/PARTIAL/SKIP/FAIL/TIMEOUT classification incl. partial-with-env-gap | `python3 engine/scripts/score_all.py --selftest` |
