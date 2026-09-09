@@ -931,7 +931,7 @@ class Agent:
             arg = re.sub(r"^/accounts?\s*", "", low).strip()
             if arg.startswith("allow "):
                 site = self.accounts.allow_site(arg[6:])
-                return f"\u2705 {site} approved — I'll sign up there when a task needs it." if site else "That doesn't look like a site (e.g. /accounts allow vinted.it)."
+                return f"\u2705 {site} approved — I'll sign up there when a task needs it." if site else "I can't approve that (money sites and big-platform logins are never allowed; otherwise use /accounts allow vinted.it)."
             if arg.startswith("forget "):
                 return f"\U0001F6AB {arg[7:]} forgotten — no more sign-ups there." if self.accounts.forget_site(arg[7:]) else "That site wasn't on my approved list."
             return self.accounts.list_text()

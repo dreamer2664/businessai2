@@ -276,7 +276,7 @@ class Inbox:
             quick = "compliment"
         if quick == "damaged_or_wrong" and re.search(r"\bcancel", low) and not re.search(r"\b(broken|damaged|crack|chip|dent|scratch|torn|leak|shatter|smash|defective|faulty|missing|doesn't work|does not work|not working|empty|nothing inside)", low):
             quick = "cancel_or_change"                                    # "cancel it, I ordered the wrong model" is a cancellation, not a damage report
-        escalate = bool(re.search(r"\b(lawyer|attorney|legal action|sue|chargeback|dispute with my bank|injur|hurt|burn|fire|allerg|gdpr|delete my data|personal data)\b", low))
+        escalate = bool(re.search(r"\b(lawyer|attorney|legal action|sue|chargeback|dispute with my bank|injur|hurt|burn|fire|rash|allerg|gdpr|delete my data|personal data)\b", low))
         needs = []
         if quick in ("where_is_my_order", "return_or_refund", "damaged_or_wrong", "cancel_or_change") and not re.search(r"#?\b\d{4,}\b", text):
             needs.append("order number")

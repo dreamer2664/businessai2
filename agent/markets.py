@@ -59,7 +59,7 @@ def _script_blobs(html):
 def _balanced(s, i):
     """Parse one JSON object starting at s[i] == '{'. Returns (obj, end) or (None, i)."""
     depth, instr, esc, start = 0, False, False, i
-    for j in range(i, min(len(s), i + 200000)):
+    for j in range(i, min(len(s), i + 500000)):
         c = s[j]
         if instr:
             if esc:
@@ -129,11 +129,6 @@ def _text_of(html):
     return re.sub(r"\s+", " ", txt).strip()
 
 
-def _meta(html, prop):
-    m = re.search(r'<meta[^>]+(?:property|name)=["\']' + re.escape(prop) + r'["\'][^>]+content=["\']([^"\']+)', html, re.I)
-    return m.group(1).strip() if m else ""
-
-
 # ---- Vinted --------------------------------------------------------------------------
 
 def parse_vinted_search(html, limit=12):
@@ -153,9 +148,7 @@ def parse_vinted_search(html, limit=12):
             url = str(it.get("url") or it.get("path") or "").strip()
             if url.startswith("/"):
                 url = "https://www.vinted.it" + url
-            price = _money(it.get("price")) or _money((it.get("price") or {}) if isinstance(it.get("price"), dict) else it.get("price"))
-            if isinstance(it.get("price"), dict):
-                price = _money(it["price"].get("amount", it["price"].get("value"))) or price
+            price = _money(it.get("price"))
             if title and url and url not in seen:
                 seen.add(url)
                 out.append({"title": title[:120], "price": price, "url": url})
@@ -163,7 +156,7 @@ def parse_vinted_search(html, limit=12):
                     return out
     if out:
         return out
-    for m in re.finditer(r'<a[^>]+href="((?:https://www\.vinted\.it)?/items/[^"\']+)"[^>]*>(.*?)</a>', html, re.S | re.I):
+    for m in re.finditer(r'<a[^>]+href="((?:https://[\w.]*vinted\.\w+)?/items/[^"\']+)"[^>]*>(.*?)</a>', html, re.S | re.I):
         url = m.group(1) if m.group(1).startswith("http") else "https://www.vinted.it" + m.group(1)
         if url in seen:
             continue
@@ -262,7 +255,7 @@ def parse_subito_search(html, limit=12):
                 return out
     if out:
         return out
-    for m in re.finditer(r'<a[^>]+href="((?:https://www\.subito\.it)?/[^"\']*?\.htm[^"\']*)"[^>]*>(.*?)</a>', html, re.S | re.I):
+    for m in re.finditer(r'<a[^>]+href="((?:https://[\w.]*subito\.it)?/[^"\']*?\.htm[^"\']*)"[^>]*>(.*?)</a>', html, re.S | re.I):
         url = m.group(1) if m.group(1).startswith("http") else "https://www.subito.it" + m.group(1)
         if url in seen:
             continue
@@ -370,6 +363,7 @@ class Throttle:
         self._jitter = jitter or (lambda: random.uniform(0, 5))
         self.hits = {}
         self.bans = {}
+        self._n = {}
 
     @staticmethod
     def host_of(url):
@@ -389,16 +383,14 @@ class Throttle:
 
     def punish(self, host):
         host = self.host_of(host) if "://" in host else host.lower()
-        n = getattr(self, "_n", {}).get(host, 0) + 1
-        if not hasattr(self, "_n"):
-            self._n = {}
+        n = self._n.get(host, 0) + 1
         self._n[host] = n
         wait = min(self.backoff_base * 2 ** (n - 1) + self._jitter(), self.backoff_max)
         self.bans[host] = self._clock() + wait
         return n <= self.max_punish
 
     def failures(self, host):
-        return getattr(self, "_n", {}).get(self.host_of(host) if "://" in host else host.lower(), 0)
+        return self._n.get(self.host_of(host) if "://" in host else host.lower(), 0)
 
 
 # ---- stealth + proxy (env-gated; off unless the owner opts in) ---------------------------------

@@ -112,7 +112,10 @@ class Accounts:
 
     # ---- safe sign-up: fakes first, real sites only when approved (item 6) --------------------------
     def is_local(self, url):
-        host = (urllib.parse.urlparse(url).hostname or "").lower()
+        u = urllib.parse.urlparse(url)
+        if u.scheme == "file" or not u.hostname:      # my own stage / local files: always fine to practice on
+            return True
+        host = u.hostname.lower()
         return host in LOCAL_HOSTS or host.endswith(".localhost")
 
     def approved(self, url):
@@ -123,6 +126,8 @@ class Accounts:
         site = re.sub(r"^www\.", "", re.sub(r"^https?://", "", (site or "").strip().lower()).split("/")[0])
         if not re.fullmatch(r"[a-z0-9.\-]+\.[a-z]{2,}(?::\d+)?", site):
             return None
+        if NEVER_SIGN_UP.search(site):
+            return None                                             # money / big-platform logins: never approvable
         if site not in self.data.setdefault("approved", []):
             self.data["approved"].append(site)
             self._save()
@@ -143,7 +148,7 @@ class Accounts:
         site = self.site_of(url)
         if site in self.data.setdefault("refused", []):
             return False, "refused"
-        if self.is_local(url) or site in self.data.setdefault("approved", []):
+        if self.is_local(url) or self.approved(url):
             return True, "ok"
         return None, "ask"
 

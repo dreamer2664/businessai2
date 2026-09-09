@@ -144,6 +144,29 @@ def _():
     assert queries and "from:(shop)" in queries[0], queries
 
 
+@check("thread rejection retries as a plain send")
+def _():
+    from agent.google import GoogleError
+    g = StubGoogle()
+    real_req = g._req
+    calls = {"n": 0}
+
+    def flaky(url, method="GET", data=None, headers=None, raw=False, timeout=60):
+        if url.endswith("/messages/send"):
+            calls["n"] += 1
+            body = json.loads(data.decode())
+            if calls["n"] == 1 and "threadId" in body:
+                raise GoogleError("HTTP 400 Invalid threadId")
+        return real_req(url, method, data, headers, raw, timeout)
+
+    g._req = flaky
+    g.send_mail("o@h.com", "Re: hi", "body", thread_id="t1", in_reply_to="<abc@h>")
+    sends = [c for c in g.calls if c[0].endswith("/messages/send")]
+    assert calls["n"] == 2 and len(sends) == 1 and "threadId" not in sends[0][2], (calls, sends)
+    raw = base64.urlsafe_b64decode(sends[0][2]["raw"] + "==").decode()
+    assert "In-Reply-To" not in raw, raw[:200]
+
+
 def main():
     ok = 0
     for name, fn in CHECKS:

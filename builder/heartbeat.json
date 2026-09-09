@@ -70,8 +70,8 @@
   ]
  ],
  "latest": [
-  "Item 3 done: Vinted/subito read deeply, Facebook waters-only, polite throttle + optional stealth/proxy.",
-  "Battery 20/20, 0 FAIL. Main green.",
+  "QA pass: file:// gate fix, Gmail thread-rejection retry, inbox rash escalation (23/23).",
+  "Docs completed: all suites in SCORES.md (20 rows), battery 20/20 fast, 0 FAIL.",
   "MARATHON COMPLETE \u2014 all 10 items shipped. Remaining: owner setup (Google token on PC, fallback secrets)."
  ]
 }
