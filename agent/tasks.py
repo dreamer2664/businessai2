@@ -620,6 +620,74 @@ class Tasks:
             self.memory.note("visit", f"{site}: {question}"[:120], out, [final])
         return out
 
+    def youtube_trending(self, limit=10):
+        """What's hot on YouTube right now (item 4): open /feed/trending in the real browser, read it. Needs the PC."""
+        try:
+            with self._session() as b:
+                b.open("https://www.youtube.com/feed/trending")
+                import time as _t
+                _t.sleep(3)
+                entries = video.extract_trending(b.page.content(), limit)
+        except Exception as e:
+            if "playwright" in str(e).lower() or "browser" in str(e).lower():
+                return "Trending needs my real browser — that runs on the PC, not here. Try /trending <topic> instead, that works anywhere."
+            return f"YouTube didn't load: {str(e)[:120]}"
+        self._release_page()
+        if not entries:
+            self.log("trending_empty")
+            return "YouTube showed me an empty trending page (their layout may have changed) — I've logged it. Try /trending <topic> instead."
+        lines = ["🔥 YouTube trending right now:"]
+        for i, v in enumerate(entries, 1):
+            meta = " · ".join(x for x in (v["channel"], f"{v['views']:,} views" if v["views"] else "") if x)
+            lines.append(f"{i}. {v['title']}" + (f" ({meta})" if meta else "") + f"\n   https://www.youtube.com/watch?v={v['id']}")
+        return "\n".join(lines)
+
+    def topic_top(self, query, n=5):
+        """Top videos for a topic ranked by views (item 4). Search-page scraping: works anywhere, no browser."""
+        try:
+            vids = video.top_for_topic(query, n)
+        except Exception as e:
+            return f"YouTube search failed: {str(e)[:100]}"
+        if not vids:
+            return f"No videos found for '{query}'."
+        lines = [f"🔥 Most-watched on '{query}':"]
+        for i, v in enumerate(vids, 1):
+            lines.append(f"{i}. {v['title']}" + (f" ({v['views']:,} views)" if v["views"] else "") +
+                         f"\n   https://www.youtube.com/watch?v={v['id']}")
+        return "\n".join(lines)
+
+    def video_comments(self, what, n=5):
+        """Top comments on a video, most-liked first (item 4): open it in the real browser, scroll, read. Needs the PC."""
+        vid = video.url_id(what)
+        if not vid:
+            try:
+                found = video.search(what, 1)
+            except Exception as e:
+                return f"YouTube search failed: {str(e)[:100]}"
+            if not found:
+                return f"No videos found for '{what}'."
+            vid = found[0]["id"]
+        try:
+            with self._session() as b:
+                b.open(f"https://www.youtube.com/watch?v={vid}")
+                import time as _t
+                _t.sleep(2)
+                for _ in range(6):
+                    b.scroll("down", 2)
+                    _t.sleep(1)
+                comments = video.extract_comments(b.page.content(), n)
+        except Exception as e:
+            if "playwright" in str(e).lower() or "browser" in str(e).lower():
+                return "Comments need my real browser — that runs on the PC, not here."
+            return f"YouTube didn't load: {str(e)[:120]}"
+        self._release_page()
+        if not comments:
+            return "No readable comments on that video (comments may be off)."
+        lines = [f"💬 Top comments (https://www.youtube.com/watch?v={vid}):"]
+        for c in comments:
+            lines.append(f"• {c['author']} ({c['likes']:,} ♥): {c['text'][:280]}")
+        return "\n".join(lines)
+
     def watch(self, what, n_videos=1):
         """'Watch' a video (URL/id) or the best video for a topic by reading its captions; summarize with the model."""
         vid = video.url_id(what)
@@ -778,6 +846,10 @@ class Tasks:
                 out = self.summarize(arg)
             elif cmd in ("watch", "video") and arg:
                 out = self.watch(arg)
+            elif cmd == "trending":
+                out = self.youtube_trending() if arg.strip().lower() in ("", "global") else self.topic_top(arg.strip())
+            elif cmd in ("comments", "comment") and arg:
+                out = self.video_comments(arg)
             elif cmd in ("visit", "open", "goto") and arg:
                 site, _, question = arg.partition("|")
                 out = self.visit(site.strip(), question.strip())
@@ -785,7 +857,7 @@ class Tasks:
                 n = int(arg) if arg.strip().isdigit() else 40
                 out = self.exam(str(config.ROOT / "tests/banks/mcq_principles-marketing.jsonl"), n)
             else:
-                out = "Tasks I can do: research <topic> · compare <product> · summarize <url> · visit <site> | <question> · watch <video url or topic> · exam [n]"
+                out = "Tasks I can do: research <topic> · compare <product> · summarize <url> · visit <site> | <question> · watch <video url or topic> · trending [topic] · comments <video> · exam [n]"
         except Exception as e:  # noqa
             out = f"Task failed: {type(e).__name__}: {str(e)[:200]}"
         self.log("task_done", cmd=cmd, ms=int((time.time() - t0) * 1000), chars=len(out))

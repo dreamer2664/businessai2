@@ -66,7 +66,7 @@ HELP = """Just talk to me. I work out whether you're asking a question, want som
 Examples: "what is a good margin for dropshipping" · "find out how ePacket works" · "look for suppliers of bamboo toothbrushes" · paste a link.
 
 Commands (optional):
-/research <topic> · /compare <product> · /summarize <url> · /visit <site> | <question> · /watch <video url or topic> · /exam [n]
+/research <topic> · /compare <product> · /summarize <url> · /visit <site> | <question> · /watch <video url or topic> · /trending [topic] · /comments <video> · /exam [n]
 /todo — my to-do list · /todo add <text> · /todo done <n> (or just say “add … to my list”, “done 2”)
 /goal <topic> — give me a standing learning goal; I study it on my own when idle (max 6 sessions a day) and keep notes
 /goals · /goal drop <n> · /notes [topic] — my notes · /learned — facts I've folded into my own knowledge pack · /report — today's summary
@@ -750,7 +750,11 @@ class Agent:
         if low.startswith("/selftest"):
             threading.Thread(target=self.selftest, daemon=True).start()
             return "Running a self-test: I'll ask you something with buttons."
-        for cmd in ("/research", "/compare", "/summarize", "/summarise", "/visit", "/watch", "/exam"):
+        if low == "/trending" or low.startswith("/trending "):
+            return self.start_task("trending", text[9:].strip() or "global")
+        if low == "/comments":
+            return "Send /comments with a video link (or a topic — I take the top video)."
+        for cmd in ("/research", "/compare", "/summarize", "/summarise", "/visit", "/watch", "/comments", "/exam"):
             if low.startswith(cmd):
                 return self.start_task(cmd[1:].replace("summarise", "summarize"), text[len(cmd):].strip())
         if low.startswith("/todo"):
@@ -2057,7 +2061,9 @@ class Agent:
                "watch": "watching it now (I read the captions) — a minute or two.",
                "compare": f"looking for suppliers of {arg} in my browser — about a minute.",
                "summarize": "reading it now — a moment.",
-               "research": f"looking into '{arg}' — report in about a minute."}[kind]
+               "research": f"looking into '{arg}' — report in about a minute.",
+               "trending": "checking what's hot on YouTube — a moment.",
+               "comments": "reading the top comments — a moment."}[kind]
         return (prefix + msg) if prefix else msg[0].upper() + msg[1:]
 
     def _finish_job(self, outcome, delivered=True):
