@@ -340,6 +340,21 @@ class Google:
             f.write(b)
         return to_path
 
+    def files_update(self, file_id, data, mime="text/html"):
+        """Replace a Drive file's content in place (for converted Docs: pass the new HTML)."""
+        if isinstance(data, (bytes, bytearray)):
+            content = bytes(data)
+        else:
+            with open(data, "rb") as f:
+                content = f.read()
+        boundary = "bai" + secrets.token_hex(8)
+        body = (f"--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{{}}\r\n"
+                f"--{boundary}\r\nContent-Type: {mime}\r\n\r\n").encode() + content + f"\r\n--{boundary}--".encode()
+        d = self._req(f"{UPLOAD}/{file_id}?uploadType=multipart&fields=id,name,webViewLink", "PATCH", body,
+                      {"Content-Type": f"multipart/related; boundary={boundary}"}, timeout=300)
+        self.log("drive_update", id=file_id[:12], size=len(content))
+        return {"id": d["id"], "name": d.get("name", ""), "link": d.get("webViewLink", "")}
+
     # ---- Gmail: read its own verification codes --------------------------------------
     def recent_mail(self, query="newer_than:1d", limit=10):
         """Latest messages matching a Gmail search; returns [{id, from, subject, date, snippet, text}]."""
@@ -421,6 +436,110 @@ class Google:
                     return links[0], m
             time.sleep(wait)
         return None, None
+
+
+    # ---- Google Docs: native reports (headings, tables, bullets) -------------------------
+    DOCS = "https://docs.googleapis.com/v1/documents"
+
+    def docs_create(self, title, folder=None, share=False):
+        """Create a native Google Doc in the library folder. share=True → anyone-with-link can read."""
+        d = self._req(self.DOCS, method="POST", data=json.dumps({"title": title}).encode(),
+                      headers={"Content-Type": "application/json"})
+        doc_id = d["documentId"]
+        link = f"https://docs.google.com/document/d/{doc_id}/edit"
+        try:
+            parent = self.subfolder(folder) if folder else self.folder_id()
+            self._req(f"{DRIVE}/files/{doc_id}?addParents={parent}&removeParents=root", method="PATCH")
+        except Exception:
+            pass
+        if share:
+            self.share_link(doc_id)
+        self.log("docs_created", title=title[:60])
+        return {"id": doc_id, "link": link}
+
+    def share_link(self, file_id):
+        """Anyone with the link can read (used for heartbeat/progress docs the owner reads)."""
+        try:
+            self._req(f"{DRIVE}/files/{file_id}/permissions", method="POST",
+                      data=json.dumps({"role": "reader", "type": "anyone"}).encode(),
+                      headers={"Content-Type": "application/json"})
+        except Exception as e:
+            self.log("share_failed", error=str(e)[:120])
+
+    def docs_get(self, doc_id):
+        return self._req(f"{self.DOCS}/{doc_id}?fields=body.content")
+
+    def docs_update(self, doc_id, requests):
+        if not requests:
+            return {}
+        return self._req(f"{self.DOCS}/{doc_id}:batchUpdate", method="POST",
+                         data=json.dumps({"requests": requests}).encode(),
+                         headers={"Content-Type": "application/json"})
+
+    def _doc_end(self, doc_id):
+        content = self.docs_get(doc_id).get("body", {}).get("content", [])
+        return content[-1].get("endIndex", 2) - 1 if content else 1
+
+    def docs_clear(self, doc_id):
+        end = self._doc_end(doc_id)
+        if end > 1:
+            self.docs_update(doc_id, [{"deleteContentRange": {"range": {"startIndex": 1, "endIndex": end}}}])
+
+    def _table_cells(self, doc_id, table_no=0):
+        """startIndex of every cell's first paragraph (row-major) for the Nth table in the doc."""
+        content = self.docs_get(doc_id).get("body", {}).get("content", [])
+        tables = [el["table"] for el in content if "table" in el]
+        if table_no >= len(tables):
+            return []
+        out = []
+        for row in tables[table_no].get("tableRows", []):
+            for cell in row.get("tableCells", []):
+                for el in cell.get("content", []):
+                    if "paragraph" in el:
+                        out.append(el["startIndex"])
+                        break
+        return out
+
+    def docs_write_blocks(self, doc_id, blocks):
+        """blocks: ("h1"|"h2"|"p"|"bullet", text) or ("table", [[cell, ...], ...]). Appends at the end."""
+        idx = self._doc_end(doc_id)
+        pending = []
+
+        def flush():
+            nonlocal pending
+            if pending:
+                self.docs_update(doc_id, pending)
+                pending = []
+
+        for kind, payload in blocks:
+            if kind == "table":
+                flush()
+                rows, cols = len(payload), max(len(r) for r in payload)
+                existing = self.docs_get(doc_id).get("body", {}).get("content", [])
+                ntables = sum(1 for el in existing if "table" in el)
+                at = self._doc_end(doc_id)
+                self.docs_update(doc_id, [{"insertTable": {"location": {"index": at},
+                                                           "rows": rows, "columns": cols}}])
+                cells = self._table_cells(doc_id, ntables)
+                flat = [c for r in payload for c in (list(r) + [""] * (cols - len(r)))]
+                reqs = [{"insertText": {"location": {"index": ci}, "text": str(txt)}}
+                        for ci, txt in reversed(list(zip(cells, flat))) if txt]
+                self.docs_update(doc_id, reqs)
+                idx = self._doc_end(doc_id)
+                continue
+            text = str(payload) + "\n"
+            pending.append({"insertText": {"location": {"index": idx}, "text": text}})
+            if kind in ("h1", "h2"):
+                pending.append({"updateParagraphStyle": {
+                    "range": {"startIndex": idx, "endIndex": idx + len(text)},
+                    "paragraphStyle": {"namedStyleType": "HEADING_1" if kind == "h1" else "HEADING_2"},
+                    "fields": "namedStyleType"}})
+            elif kind == "bullet":
+                pending.append({"createParagraphBullets": {
+                    "range": {"startIndex": idx, "endIndex": idx + len(text)},
+                    "bulletPreset": "BULLET_DISC"}})
+            idx += len(text)
+        flush()
 
 
 class _Catcher:

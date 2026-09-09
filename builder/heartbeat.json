@@ -1,0 +1,22 @@
+{
+  "branch": "night/marathon",
+  "pct": 8,
+  "rows": [
+    ["0", "Google connected (Drive + Gmail read + send)", "—", "DONE"],
+    ["1", "Fallback contact (Gmail + backup bot)", "12", "IN PROGRESS"],
+    ["2", "Smarter research", "14", "queued"],
+    ["3", "Marketplace scrapers (Vinted / subito / FB)", "20", "queued"],
+    ["4", "YouTube trending + comments", "7", "queued"],
+    ["5", "Google Docs layouts", "8", "writer coded+logic-tested, live test needs Docs API"],
+    ["6", "Gmail mastery + safe signups", "8", "queued"],
+    ["7", "Time budgets + priority queue", "8", "queued"],
+    ["8", "Pack #3 dropshipping feed", "10", "queued"],
+    ["9", "Viewer reasoning upgrade", "6", "queued"],
+    ["10", "Heartbeat system + regression battery", "7", "heartbeat live (HTML path), battery per item"]
+  ],
+  "latest": [
+    "OAuth completed via chat path; consent-state persistence fixed the restart bug.",
+    "Gmail send + Drive write verified live; native Docs writer logic-tested (needs API enable).",
+    "Next: Gmail two-way fallback (poll owner mail, obey, reply) + backup-bot support."
+  ]
+}
