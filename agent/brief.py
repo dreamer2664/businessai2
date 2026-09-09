@@ -6,7 +6,7 @@ The owner writes in plain words. Before any work starts, the agent turns the mes
                 ("in 10 minutes" → 10 min deadline; "I'm away 5 hours, take it slow" → 5 h budget)
   deliverable — what to hand back: an answer, a list, a document (with pictures/links), a file, a website …
   steps       — the to-do list the agent will follow (shown to the owner first, editable)
-  kind        — which tool family does the work (research / seller_check / compare / visit / watch / build_site / chat / ask)
+  kind        — which tool family does the work (research / seller_check / compare / visit / watch / trending / build_site / chat / ask)
 
 Pace words are parsed by rules (they must be reliable even without the thinking model); the goal, deliverable and steps
 come from the thinking model when it is available, otherwise from rules. A brief is a dict; `text()` renders it for
@@ -167,6 +167,8 @@ def _rule_brief(text, pace):
     elif re.search(r"\b(make|write|draft|create|prepare|post|publish|scrivi|prepara|fai)\b.{0,30}\b(post|caption|tweet|reel|story|stories|carousel|pin|didascalia)\b", low) \
             or (re.search(r"\b(post|caption|tweet|reel|story|carousel)\b", low) and re.search(r"\b(on|for|about|su|per)\s+(instagram|insta|ig|facebook|fb|tiktok|x|twitter|linkedin|pinterest)\b", low)):
         kind, deliverable = "post", "post"                                   # "make a tiktok post about our mugs" is a post, not a video to watch
+    elif re.search(r"\b(youtube|yt)\b", low) and re.search(r"\b(trending|trends?|trend|hot|popular|viral|most[- ](watched|viewed)|top \d+ videos?|top videos?|what'?s hot|di tendenza|tendenze|più visti)\b", low):
+        kind, deliverable = "trending", "document" if re.search(r"\b(doc|document|google docs?|links?|comments?|report|sheet)\b", low) else "list"
     elif re.search(r"\b(watch|video|youtube|youtu\.be)\b", low) or (re.search(r"\btiktok\b", low) and not re.search(r"\b(trending|trends?|popular|viral|what'?s hot|selling)\b", low)):
         kind, deliverable = "watch", "list"
     elif re.search(r"\b(trending|trends?|popular right now|viral|what'?s hot|best[- ]sellers?)\b", low):
@@ -188,6 +190,15 @@ def _rule_brief(text, pace):
         deliverable = "document"
     product = topic_of(text)
     product = re.sub(r"^(compare|comparison of|confronta|research|find out|look into|watch|summari[sz]e)\s+", "", product).strip() or product
+    n_items = re.search(r"\btop\s+(\d{1,2})\b|\b(\d{1,2})\s+(?:trending |hot |popular |viral )?(?:videos?|clips?)\b", low)
+    n_items = int(n_items.group(1) or n_items.group(2)) if n_items else None
+    if kind == "trending":
+        m_ = re.search(r"\b(?:about|on|around|regarding|riguardo a?|su|sul|sulla|sui|sugli)\s+(?!youtube\b|yt\b|each\b|every\b|the (?:top|first|list)\b)([a-zà-ú0-9][a-zà-ú0-9 '&-]{2,60}?)(?=\s*(?:[,.;?!]|\band\b|\bwith\b|\bin a\b|\bright now\b|\btoday\b|\bthis week\b|\boggi\b|$))", low)
+        product = (m_.group(1).strip() if m_ else "")
+        if product in ("each", "every", "them", "all"):
+            product = ""
+        product = re.sub(r"\b(youtube|yt|videos?|the|right now|today|this week)\b", " ", product)
+        product = re.sub(r"\s{2,}", " ", product).strip(" ,.-")
     conds = [c.strip(" .;,") for c in re.findall(r"\(([^()]{8,160})\)", text)]
     conds += [m.strip(" .;,") for m in re.findall(r"(?:^|[.;,]\s*)((?:it |they |[a-z.]+ )?(?:has to|have to|must|needs? to|should|only if|no |not just|without|excluding|deve|devono|solo se|senza)\b[^.;()]{4,120})", text, flags=re.I)]
     conds += [m.strip(" .;,") for m in re.findall(r"\b(i want [^.;()]{4,80})", text, flags=re.I)]
@@ -228,6 +239,10 @@ def _rule_brief(text, pace):
         "build_site": ["Collect the brief: name, place, what they do, opening hours, contact", "Write the copy for home / about / services / contact",
                        "Build the pages (mobile-friendly, contact form, map link)", "Check every page in the browser and fix what looks wrong",
                        "Save the site to my library and send you the link"],
+        "trending": [f"Read YouTube's public search results sorted by views for this week{(' about ' + product) if product else ' (broad terms: trending, viral, news, trailers, music)'} — the trending feed itself is hidden from visitors",
+                     f"Keep the top {n_items or 5}: title, channel, views, upload time, link",
+                     "Open each video's comment feed and keep the most-liked comment",
+                     "Write the list" + (" as a document with the links and the top comment for each, and put it in my Drive" if deliverable == "document" else " with links and the top comment for each")],
         "watch": ["Open the video(s) and read the captions", "Note the concrete ideas and figures", "Send you the list with timestamps"],
         "summarize": ["Open the page and read it fully", "Keep the key points with figures", "Write the summary"],
         "visit": ["Open the site", "Find the part the request is about", "Report what is there in plain words"],
@@ -235,7 +250,11 @@ def _rule_brief(text, pace):
         "ask": ["Answer from my own knowledge", "If I don't know it well enough, look it up first"],
         "chat": [],
     }[kind]
-    return {"goal": goal, "deliverable": deliverable, "kind": kind, "steps": steps, "questions": [], "counterfeit": counterfeit, "topic": product or goal, "constraints": conditions[:4], "sites": sites[:5]}
+    out = {"goal": goal, "deliverable": deliverable, "kind": kind, "steps": steps, "questions": [], "counterfeit": counterfeit, "topic": product or goal, "constraints": conditions[:4], "sites": sites[:5]}
+    if kind == "trending":
+        out["topic"] = product                                                  # "" = global; never the whole sentence
+        out["n"] = n_items or 5
+    return out
 
 
 class Brief:
@@ -254,7 +273,7 @@ class Brief:
                 if isinstance(j.get("steps"), list) and 2 <= len(j["steps"]) <= 8 and all(isinstance(s, str) and 3 < len(s) < 160 for s in j["steps"]):
                     b["steps"] = [s.strip().rstrip(".") for s in j["steps"]]
                 if j.get("kind") in ("research", "seller_check", "compare", "summarize", "visit", "watch", "build_site", "post", "ask", "chat"):
-                    if not (b["kind"] == "seller_check" and j["kind"] == "research"):        # rules see sellers better than the small model
+                    if not (b["kind"] == "seller_check" and j["kind"] == "research") and b["kind"] != "trending":        # rules see sellers and trending better than the small model
                         b["kind"] = j["kind"]
                 if j.get("deliverable") in ("answer", "list", "document", "file", "website", "post", "reply"):
                     b["deliverable"] = j["deliverable"] if not (b["deliverable"] == "document" and j["deliverable"] == "answer") else "document"

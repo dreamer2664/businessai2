@@ -833,7 +833,7 @@ class Agent:
             threading.Thread(target=self.selftest, daemon=True).start()
             return "Running a self-test: I'll ask you something with buttons."
         if low == "/trending" or low.startswith("/trending "):
-            return self.start_task("trending", text[9:].strip() or "global")
+            return self.start_task("trending", text[9:].strip() or "")
         if low == "/comments":
             return "Send /comments with a video link (or a topic — I take the top video)."
         for cmd in ("/research", "/compare", "/summarize", "/summarise", "/visit", "/watch", "/comments", "/exam"):
@@ -1279,7 +1279,7 @@ class Agent:
         if self.planner.installed() and len(low.split()) >= 8 and self.owner_id and not self.busy:
             self.bot.send(self.owner_id, "👀 On it — reading your request…")   # a sign of life within a second; the plan follows
         b = self.briefer.make(text)
-        if it and it["kind"] in ("watch", "summarize", "visit") and b["kind"] in ("ask", "research", "visit", "watch", "summarize"):
+        if it and it["kind"] in ("watch", "summarize", "visit") and b["kind"] in ("ask", "research", "visit", "watch", "summarize") and b["kind"] != "trending":
             b["kind"], b["topic"] = it["kind"], it["topic"]                                        # URL rules are reliable
         self.log("intent", intent=b["kind"], topic=b["topic"][:80])
         if b["kind"] == "chat":
@@ -1347,6 +1347,9 @@ class Agent:
         if kind == "seller_check":
             threading.Thread(target=self.run_seller_check, args=(b,), daemon=True).start()
             return head + "\n\nStarting — you'll get the document here (and in my Drive if it's connected)."
+        if kind == "trending":
+            threading.Thread(target=self.run_task, args=(f"trending {b.get('n', 5)} {topic}".rstrip(), b), daemon=True).start()
+            return head + ("\n\nYou'll get the document here (and in my Drive if it's connected)." if b["deliverable"] == "document" else "")
         if kind == "watch" and not re.search(r"https?://", topic) and re.search(r"\b(ideas?|videos|shorts|tiktoks?|reels)\b", b["goal"], re.I):
             threading.Thread(target=self._run_ideas, args=(topic, b), daemon=True).start()
             return head
@@ -2153,9 +2156,9 @@ class Agent:
         if self.busy:
             qpos = self.mind.q_add(f"/{kind} {arg}".strip())
             return f"I'm still on: {self.busy}. Queued “{kind} {arg[:50]}” as #{qpos} — it starts right after (say 'stop' to switch now)."
-        if not arg:
+        if not arg and kind != "trending":
             return f"What should I {kind}?"
-        threading.Thread(target=self.run_task, args=(f"{kind} {arg}",), daemon=True).start()
+        threading.Thread(target=self.run_task, args=(f"{kind} {arg}".rstrip(),), daemon=True).start()
         msg = {"exam": "sitting the exam now — this takes a few minutes; I'll send the score.",
                "visit": f"going to {arg.split('|')[0].strip()} now — a moment.",
                "watch": "watching it now (I read the captions) — a minute or two.",

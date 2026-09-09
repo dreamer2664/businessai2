@@ -620,30 +620,77 @@ class Tasks:
             self.memory.note("visit", f"{site}: {question}"[:120], out, [final])
         return out
 
-    def youtube_trending(self, limit=10):
-        """What's hot on YouTube right now (item 4): open /feed/trending in the real browser, read it. Needs the PC."""
+    def youtube_trending(self, limit=10, topic="", with_comments=None, want_doc=None):
+        """What's hot on YouTube. The trending feed is hidden from visitors, so this reads the public search page sorted
+        by views for the week (ytInitialData) — no browser needed. With a document: one card per video, link, channel,
+        views, upload time and the top comment. Falls back to the real browser feed only when that reader finds nothing."""
+        want_doc = self.want_doc if want_doc is None else want_doc
+        n = max(1, min(int(limit or 10), 15))
         try:
-            with self._session() as b:
-                b.open("https://www.youtube.com/feed/trending")
-                import time as _t
-                _t.sleep(3)
-                entries = video.extract_trending(b.page.content(), limit)
+            vids, note = video.hot_now(topic, n)
         except Exception as e:
-            if "playwright" in str(e).lower() or "browser" in str(e).lower():
-                return "Trending needs my real browser — that runs on the PC, not here. Try /trending <topic> instead, that works anywhere."
-            return f"YouTube didn't load: {str(e)[:120]}"
-        self._release_page()
-        if not entries:
-            self.log("trending_empty")
-            return "YouTube showed me an empty trending page (their layout may have changed) — I've logged it. Try /trending <topic> instead."
-        lines = ["🔥 YouTube trending right now:"]
-        for i, v in enumerate(entries, 1):
-            meta = " · ".join(x for x in (v["channel"], f"{v['views']:,} views" if v["views"] else "") if x)
-            lines.append(f"{i}. {v['title']}" + (f" ({meta})" if meta else "") + f"\n   https://www.youtube.com/watch?v={v['id']}")
+            self.log("hot_now_failed", error=str(e)[:120])
+            vids, note = [], f"YouTube search failed: {str(e)[:100]}"
+        if not vids:
+            try:
+                with self._session() as b:
+                    b.open("https://www.youtube.com/feed/trending")
+                    import time as _t
+                    _t.sleep(3)
+                    entries = video.extract_trending(b.page.content(), n)
+                self._release_page()
+                vids = [dict(e, url=f"https://www.youtube.com/watch?v={e['id']}", published="", length="") for e in entries]
+                note = "From YouTube's trending page in my browser."
+            except Exception as e:
+                self.log("trending_empty", error=str(e)[:80])
+            if not vids:
+                return f"I couldn't read YouTube right now ({note}). Try again in a minute, or give me a topic: /trending <topic>."
+        if with_comments is None:
+            with_comments = want_doc or n <= 5
+        if with_comments:
+            for v in vids:
+                if self._stopped():
+                    break
+                try:
+                    cs, _ = video.top_comments(v["id"], 1)
+                    v["top_comment"] = cs[0] if cs else None
+                except Exception as e:
+                    self.log("comments_failed", id=v["id"], error=str(e)[:80])
+                    v["top_comment"] = None
+        head = f"🔥 Hot on YouTube this week" + (f" — {topic}" if topic else "") + f" (top {len(vids)} by views):"
+        lines = [head]
+        for i, v in enumerate(vids, 1):
+            meta = " · ".join(x for x in (v.get("channel", ""), f"{v['views']:,} views" if v.get("views") else "", v.get("published", "")) if x)
+            lines.append(f"{i}. {v['title']}" + (f" ({meta})" if meta else "") + f"\n   {v['url']}")
+            tc = v.get("top_comment")
+            if tc:
+                lines.append(f"   💬 {tc['author']} ({tc['likes']:,} ♥): {tc['text'][:160]}")
+        lines.append(f"ℹ️ {note}")
+        if want_doc:
+            try:
+                from . import library
+                doc = library.Doc("YouTube — hot this week" + (f": {topic}" if topic else ""), f"top {len(vids)} by views · {time.strftime('%Y-%m-%d %H:%M')}", kind="trending")
+                doc.summary(note)
+                doc.table("The list", [[i, f"[{v['title']}]({v['url']})", v.get("channel", ""), f"{v['views']:,}" if v.get("views") else "", v.get("published", ""), v.get("length", "")]
+                                       for i, v in enumerate(vids, 1)], header=["#", "Video", "Channel", "Views", "Uploaded", "Length"])
+                for v in vids:
+                    tc = v.get("top_comment")
+                    doc.option(v["title"], v["url"], price=f"{v['views']:,} views" if v.get("views") else "",
+                               facts={"Channel": v.get("channel", ""), "Uploaded": v.get("published", ""), "Length": v.get("length", ""),
+                                      "Top comment": (f"{tc['author']} ({tc['likes']:,} ♥): {tc['text']}" if tc else ("(comments off or not readable)" if with_comments else ""))})
+                self.last_doc = doc.save("youtube-hot-" + (topic[:30] or "week"))
+                self.log("doc_saved", title=doc.title, options=len(vids))
+            except Exception as e:
+                self.log("trending_doc_failed", error=str(e)[:120])
+        if self.memory:
+            try:
+                self.memory.note("trending", f"YouTube hot this week {topic}".strip(), "\n".join(lines[1:1 + len(vids) * 2]), [v["url"] for v in vids])
+            except Exception:
+                pass
         return "\n".join(lines)
 
     def topic_top(self, query, n=5):
-        """Top videos for a topic ranked by views (item 4). Search-page scraping: works anywhere, no browser."""
+        """Top videos for a topic ranked by views (all time). Search-page reader: works anywhere, no browser."""
         try:
             vids = video.top_for_topic(query, n)
         except Exception as e:
@@ -652,12 +699,13 @@ class Tasks:
             return f"No videos found for '{query}'."
         lines = [f"🔥 Most-watched on '{query}':"]
         for i, v in enumerate(vids, 1):
-            lines.append(f"{i}. {v['title']}" + (f" ({v['views']:,} views)" if v["views"] else "") +
-                         f"\n   https://www.youtube.com/watch?v={v['id']}")
+            meta = " · ".join(x for x in (v.get("channel", ""), f"{v['views']:,} views" if v.get("views") else "", v.get("published", "")) if x)
+            lines.append(f"{i}. {v['title']}" + (f" ({meta})" if meta else "") + f"\n   https://www.youtube.com/watch?v={v['id']}")
         return "\n".join(lines)
 
     def video_comments(self, what, n=5):
-        """Top comments on a video, most-liked first (item 4): open it in the real browser, scroll, read. Needs the PC."""
+        """Top comments on a video, most-liked first — read from the same JSON the watch page loads (no browser);
+        the real browser is only the fallback."""
         vid = video.url_id(what)
         if not vid:
             try:
@@ -667,23 +715,28 @@ class Tasks:
             if not found:
                 return f"No videos found for '{what}'."
             vid = found[0]["id"]
+        comments, meta = [], {}
         try:
-            with self._session() as b:
-                b.open(f"https://www.youtube.com/watch?v={vid}")
-                import time as _t
-                _t.sleep(2)
-                for _ in range(6):
-                    b.scroll("down", 2)
-                    _t.sleep(1)
-                comments = video.extract_comments(b.page.content(), n)
+            comments, meta = video.top_comments(vid, n)
         except Exception as e:
-            if "playwright" in str(e).lower() or "browser" in str(e).lower():
-                return "Comments need my real browser — that runs on the PC, not here."
-            return f"YouTube didn't load: {str(e)[:120]}"
-        self._release_page()
+            self.log("comments_failed", id=vid, error=str(e)[:100])
         if not comments:
-            return "No readable comments on that video (comments may be off)."
-        lines = [f"💬 Top comments (https://www.youtube.com/watch?v={vid}):"]
+            try:
+                with self._session() as b:
+                    b.open(f"https://www.youtube.com/watch?v={vid}")
+                    import time as _t
+                    _t.sleep(2)
+                    for _ in range(6):
+                        b.scroll("down", 2)
+                        _t.sleep(1)
+                    comments = video.extract_comments(b.page.content(), n)
+                self._release_page()
+            except Exception as e:
+                self.log("comments_browser_failed", id=vid, error=str(e)[:80])
+        if not comments:
+            return f"No readable comments on https://www.youtube.com/watch?v={vid} (comments may be off)."
+        title = f" — {meta['title']}" if meta.get("title") else ""
+        lines = [f"💬 Top comments{title} (https://www.youtube.com/watch?v={vid}):"]
         for c in comments:
             lines.append(f"• {c['author']} ({c['likes']:,} ♥): {c['text'][:280]}")
         return "\n".join(lines)
@@ -846,8 +899,13 @@ class Tasks:
                 out = self.summarize(arg)
             elif cmd in ("watch", "video") and arg:
                 out = self.watch(arg)
-            elif cmd == "trending":
-                out = self.youtube_trending() if arg.strip().lower() in ("", "global") else self.topic_top(arg.strip())
+            elif cmd in ("trending", "hot"):
+                a = arg.strip()
+                m_ = re.match(r"^(\d{1,2})\s*(.*)$", a)
+                n_, a = (int(m_.group(1)), m_.group(2).strip()) if m_ else (5 if self.want_doc else 10, a)
+                out = self.youtube_trending(limit=n_, topic="" if a.lower() in ("", "global", "youtube") else a)
+            elif cmd == "topvideos" and arg:
+                out = self.topic_top(arg.strip())
             elif cmd in ("comments", "comment") and arg:
                 out = self.video_comments(arg)
             elif cmd in ("visit", "open", "goto") and arg:

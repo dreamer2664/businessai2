@@ -214,6 +214,9 @@ class Talk:
         if not t or t.startswith("/"):
             return None
         low = t.lower()
+        e = self.echo_test(t)                                          # "answer with 1234ABC if you got this", "reply OK", "are you there?" — a line check, not a job
+        if e:
+            return e
         if self.GREET.match(t):
             return self.greet()
         if self.CAN_DO.search(t) and not re.search(r"\b(alone|on your own|by yourself|without me)\b|\b(when|if|with|about|for the shop|while)\b.{0,40}?\b(customer|angry|rude|shop|store|order|refund|me)\b", low):
@@ -295,6 +298,28 @@ class Talk:
             return self.shipping_ok(_num(m.group(1) or m.group(2)), t)
         if self.START.search(t) and re.search(r"\b(sell|selling|shop|store|online|business|vendere|negozio|dropship)", low):
             return self.start_plan(t)
+        return None
+
+    ECHO = re.compile(r"^\W*(?:hello|hi|hey|ciao|test|testing|ping|please|ok)?[\s,!.:-]*(?:(?:can you |could you |just |please )?(?:answer|reply|respond|write|say|type|send|echo|repeat|write back|rispondi|scrivi)(?: me| back| to me| to this| to this (?:mail|email|message))?\s*(?:with|only|just|the word|the code|exactly|con|solo)?\s*(?:(?P<q>[\"“'‘«])(?P<quoted>[^\"”'’»]{1,40})[\"”'’»]|(?P<word>[A-Za-z0-9][A-Za-z0-9_#!-]{0,15}))\s*(?:(?:if|when|once|so i know|so that i know|to confirm|to show|to prove|se|quando)\b.{0,80})?)\W*$", re.I)
+    ALIVE = re.compile(r"^\W*(?:hello|hi|hey|ciao|test|testing)?[\s,!.]*(?:are you (?:there|alive|awake|up|online|working|on|receiving|getting this|reading this)|(?:do|did|can) you (?:get|read|receive|see|hear) (?:me|this|my (?:mail|email|message)s?)|(?:is )?(?:this|the bot|the line|it) (?:working|alive|on|up)|anyone there|(?:this is a |just a )?(?:test|line check|ping|check)|ci sei|sei (?:vivo|online|sveglio)|mi (?:senti|leggi|ricevi)|funzioni|ping)\W*(?:\?|!)*\W*$", re.I)
+
+    def echo_test(self, t):
+        """A line check in plain words → the literal reply. Never treated as a research job."""
+        low = t.lower()
+        if re.search(r"https?://|\b(customer|order|refund|price|supplier|seller|research|find|search|document|doc|website|post)\b", low):
+            return None
+        if len(low.split()) > 18:
+            return None
+        m = self.ECHO.match(t)
+        if m:
+            code = (m.group("quoted") or m.group("word") or "").strip(" .!?")
+            has_cond = bool(re.search(r"\b(if|when|once|so i know|so that i know|to confirm|to show|to prove|se|quando)\b", low))
+            skip = {"me", "back", "now", "soon", "later", "this", "that", "it", "please", "asap", "with", "only", "here", "something", "anything", "hello", "hi", "to"}
+            plain_ok = bool(m.group("quoted")) or has_cond or re.fullmatch(r"(?:ping|pong|ok|okay|yes|test|received|ricevuto|[A-Z0-9]{2,16}|\d{2,16})", code)
+            if code and code.lower() not in skip and plain_ok:
+                return f"{code}\n(Got your message — both lines work.)"
+        if self.ALIVE.match(t) and not self.HERE_Q.match(t):                 # 'are you there?' has its own richer answer (here())
+            return self.here()
         return None
 
     # ---- quick things (answered even in the middle of a job) --------------------------------------

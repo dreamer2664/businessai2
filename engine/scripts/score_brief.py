@@ -49,6 +49,11 @@ CASES = [
     ("draft an instagram story for the launch", dict(kind="post")),
     ("watch this tiktok about dropshipping", dict(kind="watch")),
     ("is this seller ok? https://www.vinted.it/member/12345", dict(kind_in=("seller_check", "visit", "summarize"))),
+    ("get me the top 5 trending videos on youtube right now, google doc with links and the top comment for each", dict(kind="trending", deliverable="document", topic="")),
+    ("what's trending on youtube about dropshipping?", dict(kind="trending", deliverable="list", topic="dropshipping")),
+    ("top 3 most viewed youtube videos about bamboo toothbrushes this week", dict(kind="trending", topic="bamboo toothbrushes")),
+    ("youtube trends on home decor, write me a doc", dict(kind="trending", deliverable="document", topic="home decor")),
+    ("what are the trending products on tiktok", dict(kind_in=("research", "ask"))),
 ]
 for msg, exp in CASES:
     b = B.make(msg)

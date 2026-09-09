@@ -14,12 +14,12 @@ Reality check on 2026-09-09 with the real browser:
 - pace budget is filled by study.quiet_session (PDF / video / brainstorm) — no project list, brainstorms are not picked up later.
 
 ## Order of work (each = one milestone, one score set)
-- [ ] A. Reliable second channel — the fallback module exists (fallback.py 17/17) but only as code; it must be *set up and
+- [x] A. Reliable second channel (2026-09-09, bab647b/8b7b9c6: owner mailed from carlo.rella014@gmail.com → answered by mail in 63 s; replies carry plan/buttons/doc names; spoof check; /fallback check now|on|off) — the fallback module exists (fallback.py 17/17) but only as code; it must be *set up and
       proven* end to end with the owner: Gmail two-way (owner mails the bot, bot answers) + the backup Telegram bot;
       a "line check" every morning; a one-line owner guide. Done = owner has received a reply through each line.
-- [ ] B. Understanding requests like the YouTube one — intent → the right tool (a "trending" request is a *list*
+- [x] B. Understanding requests like the YouTube one (2026-09-09: "trending" is its own kind → list/document, topic and N parsed; literal line checks "answer with X if you got this" answered literally) — intent → the right tool (a "trending" request is a *list*
       job, not "watch captions"); the plan names the tool it will use and the shape of the result.
-- [ ] C. YouTube done right, browser-first — search/trending readers parse ytInitialData (ids, titles, channel,
+- [x] C. YouTube done right (2026-09-09: video.py reads ytInitialData — search with sort/period filters, top comments from the same /next JSON the page loads, hot_now() = most-watched uploads of the week with the honest note; document with table + top comment; fixtures in tests/fixtures/yt_*; live check passed from the sandbox — PC check still worth doing). Trending page itself stays hidden from visitors; the browser feed is only a fallback. — search/trending readers parse ytInitialData (ids, titles, channel,
       views, published), top comment per video from the watch page, honest "trending is hidden from visitors → here is
       the search-by-recency fallback". Fixtures from real pages; live check on the PC.
 - [ ] D. Google Docs reports — the native Docs writer exists; per-type templates (trending table, deal alert,
@@ -39,3 +39,4 @@ Reality check on 2026-09-09 with the real browser:
 
 ## Log
 - 2026-09-09: list written after the audit; A/B/C first because they are what the owner sees every day.
+- 2026-09-09 (evening): A proven live with the owner; B + C shipped (youtube 12→19, brief 34→39, talk +3, fallback 17→20). Next: D (Doc templates + heartbeat doc), E (time floors/ceilings, projects).
