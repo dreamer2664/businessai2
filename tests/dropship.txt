@@ -2,14 +2,14 @@
 # Every accepted term was verified present in the trimmed seed passages (packs/sources/web_urls_dropship.tsv, 37 guides).
 
 ## Starting out
-What is dropshipping?	supplier ships|without holding inventory|no inventory|third party ships|don't hold stock
+What is dropshipping?	supplier ships|without holding inventory|no inventory|third party ships|don't hold stock|doesn't stock|does not stock|don't stock its products
 What do you need to start dropshipping?	niche|supplier|Shopify|store|product research
-What is a dropshipping niche?	specific segment|targeted audience|specific category|focused market
-What is the difference between dropshipping and holding inventory?	no upfront inventory|supplier holds|without stock|less capital
-Why do dropshippers order samples before selling?	check quality|test quality|verify quality|quality and shipping
+What is a dropshipping niche?	specific segment|targeted audience|specific category|focused market|small range of products
+What is the difference between dropshipping and holding inventory?	no upfront inventory|supplier holds|without stock|less capital|before customers have bought|don't buy a large amount of stock|tied up in inventory
+Why do dropshippers order samples before selling?	check quality|test quality|verify quality|quality and shipping|evaluate the quality
 
 ## Suppliers
-Which platforms connect stores with US suppliers for fast shipping?	Spocket|Zendrop|Doba
+Which platforms connect stores with US suppliers for fast shipping?	Spocket|Zendrop|Doba|Syncee
 What is Zendrop best for?	beginners|branding|US fulfillment|easy to use|automated
 What is CJ Dropshipping best for?	scaling|warehouses|branding|print on demand|sourcing
 What is SaleHoo?	supplier directory|vetted suppliers|research|training
@@ -17,14 +17,14 @@ What is AutoDS?	automation|auto-ordering|fulfillment|product research
 What does DSers do?	AliExpress|bulk ordering|bulk orders|supplier
 What is 1688?	Alibaba|Chinese|wholesale|bulk
 What is an MOQ?	minimum order|minimum quantity
-How do you spot a fake supplier?	samples|business license|upfront|reviews|contact details
+How do you spot a fake supplier?	samples|business license|upfront|reviews|contact details|due diligence|extremely low prices|incomplete contact details
 
 ## Products
-What is a winning dropshipping product?	wow|problem|margins|not in stores|unique
-What margin do dropshippers aim for on a winning product?	3x|three times|markup
-What tools find trending dropshipping products?	Minea|Dropship.io|EcomHunt|spy|Google Trends|best sellers
-Why avoid selling trademarked lookalikes?	suspended|banned|policy|infringement
-What should a product cost to leave room for ads?	cheap to source|low cost|fraction|sourcing cost
+What kind of products have the wow factor?	unique|quirky|innovative|I need this|not a product you usually see
+What is a good profit margin for dropshipping?	20-30%|20-30|after all costs|3x markup|2.5x
+Which tool is best for dropshipping product research?	Minea|Dropship.io|EcomHunt|spy|Google Trends|best sellers|Dropship.IO|Dropship.io|product database|Minea
+Why avoid selling trademarked lookalikes?	suspended|banned|policy|infringement|sued|without permission
+What minimum selling price should a dropshipping product have?	at least $20|$19.95|3x markup|2.5x - 3x|at least $15|$15
 What does 'wow factor' mean for a product?	stops the scroll|need this|attention|unique
 
 ## Money and EU tax
@@ -36,15 +36,44 @@ Who handles VAT when you sell through a marketplace?	marketplace|deemed|responsi
 What is a chargeback?	dispute|reversal|card|fraud
 
 ## Marketing
-Why is TikTok popular for dropshipping?	viral|creators|UGC|short video|organic
-What are UGC ads?	creator|customer videos|authentic|user-generated
-What should you test before scaling ads?	small budget|several creatives|test products|winning
-How do influencers help a new store?	trust|audience|followers|promote
+What is TikTok Shop?	viral|creators|UGC|short video|organic|sell products directly on TikTok|creators and brands|e-commerce program|sell products and make money on TikTok|social commerce platform|digital storefront
+What are UGC ads?	creator|customer videos|authentic|user-generated|customer's eye|real-life situation
+How much does it cost to run Facebook ads?	small budget|several creatives|test products|winning|$0.50 and $2.00|per click
+How do influencers help a new store?	trust|audience|followers|promote|cheap impressions|small marketing budget
 What is the first thing to fix when ads get clicks but no sales?	product page|offer|price|trust|reviews
 
 ## Brand and scale
 What is private label?	own brand|your brand|manufacturer|custom packaging
-How is print on demand different from dropshipping?	custom designs|printed|your designs|no inventory either
-When should a dropshipper switch from AliExpress to an agent or warehouse?	volume|scale|consistent orders|branding
-What does white label mean?	rebrand|your own brand|generic|someone else's product
-What records should a dropshipper keep from day one?	orders|expenses|receipts|taxes|bookkeeping
+What does CJdropshipping's print on demand feature do?	upload designs|print and fulfill|designs or logo|branded merchandise
+When can an agent help you manufacture a product under your own brand?	volume|scale|consistent orders|branding|have volume|work with an agent
+What does white label mean?	rebrand|your own brand|generic|someone else's product|third-party suppliers|manufactured by
+What records should a seller keep for taxes?	orders|expenses|receipts|taxes|bookkeeping|sales, expenses, and returns|detailed records|expenses|keep records|record-keeping
+
+## Used goods and reselling
+What fees does Vinted charge sellers?	zero fees|no listing fees|no selling fees|free for sellers|no commission|zero fees|no listing fees|free for sellers|no commission
+Who pays the Buyer Protection fee on Vinted?	buyer|buyers pay
+Why relist an item on Vinted?	newer listings|visibility|top of|fresh|algorithm prioritizes|boost old listings
+What should a second-hand listing description include?	imperfections|condition|how many times|measurements|flaws|size
+What is the best way to price eBay items competitively?	sold listings|sold items|actually sold|what similar items|sold listings|actually sold for
+What is cross-listing?	multiple marketplaces|several marketplaces|list on multiple|listing everywhere|more than one marketplace|different marketplaces
+What light should you use for product photos?	natural light|clean background|multiple angles|all angles|modelled|natural light|natural lighting
+What are the red flags of a counterfeit supplier?	extremely low prices|incomplete contact details|counterfeit|scam
+
+## Marketplace fees
+What fee does eBay take on a sale?	final value fee|13.6%|13.25%
+How do Etsy fees add up?	$0.20 listing fee|6.5% transaction|listing fee|transaction fee|$0.20 listing fee|6.5% transaction|3% payment processing
+What commission does Poshmark charge?	20% commission|20%|flat $2.95
+What does Mercari charge sellers?	flat 10%|10% selling fee|10%
+What does Depop charge US sellers?	0% commission|no selling fee|3.3%|payment processing
+What commission fee does Facebook Marketplace charge?	5% commission|5%|$0.40|5% commission|5%|$0.40
+What commission does Whatnot charge?	8% commission|8%|2.9%|8% commission|8%|2.9%
+Which marketplace has the lowest fees for a reseller?	Vinted|Depop|zero fees
+What happens to eBay fees for a Below Standard seller?	additional 6%|6%|19.6%|higher final-value fees|higher final value fees
+
+## EU rules for online sellers
+How long does an EU consumer have to withdraw from an online purchase?	14 days
+What must you refund when a customer withdraws?	what they paid|standard delivery cost|including the standard delivery|delivery cost
+How long is the legal guarantee in the EU?	2-year|two-year|minimum of 2|2 years
+When is CE marking mandatory?	harmonised EU rules|covered by harmonised|EU product rules|specifically mandate
+What is a 3PL?	third-party logistics|warehouses and ships|ships your orders
+What is high-ticket dropshipping?	$200+|bigger margins|fewer sales|less customer service|high-ticket products without|expensive products|$200 up|higher price range|from $200

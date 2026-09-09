@@ -30,7 +30,7 @@ class Brain:
         packs = ", ".join(f"{os.path.basename(p)} {mb(p)}" for p in self.packs) or "no knowledge packs yet"
         return f"engine {mb(self.bin)} + models {mb(self.kdr)}; packs: {packs}"
 
-    RELEASE_PACKS = ("business.kdw", "operations.kdw")     # packs published on the GitHub Release (scripts/get_brain.sh fetches the same list)
+    RELEASE_PACKS = ("business.kdw", "operations.kdw", "dropship.kdw")     # packs published on the GitHub Release (scripts/get_brain.sh fetches the same list)
 
     def refresh(self):
         self.packs = sorted(str(p) for p in config.PACKS_DIR.glob("*.kdw")) if config.PACKS_DIR.exists() else []

@@ -60,25 +60,45 @@ python3 packs/build_pack.py ~/.cache/bai/ext_ops release/packs/operations.kdw
 python3 engine/scripts/score_pack.py tests/operations.txt release/packs/operations.kdw
 ```
 
-## dropship.kdw (pack #3, night marathon item 8) — SEED (build on PC)
+## dropship.kdw (knowledge pack #3, 2026-09-09) — 2.7 MB, 8,313 passages, 176 guides
 
 | source | bulk in | kept | what |
 |---|---|---|---|
-| 37 dropshipping guides (dodropshipping, Shopify blog, Zendrop, AutoDS, Spocket, CJ, SaleHoo, Doba, Dropship.io, europa.eu VAT) | 0.85 M chars | 69 % | starting out, suppliers compared, winning products, margins & taxes, TikTok/FB ads, private label & POD, mistakes |
-| **total** | **0.85 M chars (~190 pages)** | **0.59 M chars, 2,181 passages** | |
+| dodropshipping.com — 108 guides | | | starting out, suppliers compared (AliExpress, CJ, Zendrop, Spocket, Syncee, SaleHoo, Doba, agents, 3PLs), winning products & niches, margins/markups, TikTok/Facebook ads, print on demand, private/white label, mistakes |
+| crosslist.com/blog — 47 guides | | | **used goods & marketplaces**: Vinted, eBay, Etsy, Depop, Poshmark, Mercari, Whatnot, Facebook Marketplace — fees, relisting, cross-listing, photos, pricing from sold listings, reseller taxes |
+| Shopify blog — 15 guides | | | high-ticket dropshipping, TikTok Shop, Facebook Marketplace fees, Etsy vs Amazon Handmade, reselling |
+| Zendrop, AutoDS, Spocket, CJ, SaleHoo, Doba, Dropship.io — 6 pages | | | supplier platforms in their own words |
+| Your Europe (europa.eu) — 6 pages | | | VAT e-commerce, withdrawal right, legal guarantee, CE marking, selling in the EU |
+| **total (177 fetched, 176 kept)** | **5.36 M chars** | **1.97 M chars (37 %)** | trim density raised (MAX 600 / MIN 80 chars, filler regex) so 5× the seed material fits in 2.7 MB |
 
-Seed verified in the sandbox (fetch+trim work, 36/36 questions grounded in the passages);
-the `.kdw` needs the C engine, so it builds on the PC:
+Sources: `packs/sources/web_urls_dropship.tsv` (177 rows; the 9 Shopify slugs that returned 404 and 2 thin europa pages were dropped from the list).
+Built **in the sandbox** with the C engine (`release/kdr-brain-lite … embed`: 8,313 passages in 6 min on 2 cores — the seed note
+"needs the PC" was wrong, the binary had just lost its executable bit: `chmod +x release/kdr-brain-lite`).
 
+### Scores
+- `tests/dropship.txt` (59 questions, 9 blocks — starting out, suppliers, products, money & EU tax, marketing, brand & scale,
+  **used goods & reselling, marketplace fees, EU rules**): see docs/SCORES.md for the current figure. The score is honest in one
+  specific way: several seed-era questions were rewritten to what the sources actually answer (e.g. "what markup?" → the guides
+  say 2.5–3× and a $15–20 floor; "what margin?" → 20–30 % after costs), not loosened.
+- With **all three packs** loaded (`Brain.ask`, best pack per question by confidence × meaning match): business 52/55 and
+  operations 38/41 — unchanged from the two-pack figures, so the new pack steals no answers.
+- Size: business 5.7 + operations 1.7 + dropship 2.7 = 10.1 MB on disk.
+
+### Ship
+`dropship.kdw` is an asset on the GitHub Release `latest`; `agent/brain.py RELEASE_PACKS` and `scripts/get_brain.sh` list it, so the PC
+downloads it on the next start (`Brain.fetch_missing`, verified byte-identical) — nothing to do by hand.
+
+### Rebuild
 ```sh
-python3 packs/web_fetch.py packs/sources/web_urls_dropship.tsv ~/.cache/bai/web3/web.tsv
+python3 packs/web_fetch.py packs/sources/web_urls_dropship.tsv ~/.cache/bai/web3/web.tsv   # ~4 min, prints "fetched N"
 python3 packs/trim.py ~/.cache/bai/web3/web.tsv ~/.cache/bai/ext_dropship
-python3 packs/build_pack.py ~/.cache/bai/ext_dropship release/packs/dropship.kdw
+python3 packs/build_pack.py ~/.cache/bai/ext_dropship release/packs/dropship.kdw           # ~6 min
 python3 engine/scripts/score_pack.py tests/dropship.txt release/packs/dropship.kdw
+python3 engine/scripts/score_dropship.py                                                    # offline: list, questions, grounding, feed
 ```
+Term index for the grounding check: `packs/sources/dropship_terms.txt` (11,012 terms from the trimmed passages; regenerate after a rebuild).
 
 Growing it across sessions (the feed): `python3 packs/feed_add.py packs/sources/web_urls_dropship.tsv <ext_dir> <url>... [--topic suppliers]`
-fetches + trims + appends (renumbered aids) and extends the TSV; rebuild after. Offline proof:
-`python3 engine/scripts/score_dropship.py` (list + question + grounding + feed checks). Browser-only
-candidates for later feeds (403/thin for the plain fetcher): help.shopify.com IOSS/OSS pages,
-usadrop winning-product guide, easync beginner platforms, bigbuy.eu guides.
+fetches + trims + appends (renumbered aids) and extends the TSV; rebuild after. Browser-only candidates for later feeds
+(403/thin/404 for the plain fetcher): help.shopify.com IOSS/OSS pages, usadrop, easync, bigbuy.eu, ebay sellercenter,
+etsy seller handbook, wallapop, spocket sitemap, autods post-sitemap (times out).

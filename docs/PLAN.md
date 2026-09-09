@@ -158,6 +158,8 @@ Milestones (one per session, each with a score set; earlier scores must not drop
 ## Feeding log (bulk in → trimmed → kept; the brain must not get "stupider": all earlier scores re-run)
 - 2026-09-07 pack #2 `operations.kdw`: 113 docs, 1.71 M chars in → 1.14 M kept (67 %), 1.7 MB. Customer service, returns &
   chargebacks, shipping & inventory, pricing/payments/metrics, EU seller rules. tests/operations.txt 39/41; business.txt still 52/55.
+- 2026-09-09 pack #3 `dropship.kdw`: 176 guides, 5.36 M chars in → 1.97 M kept (37 %, denser trim), 2.7 MB. Dropshipping,
+  used goods & reselling, marketplace fees, EU rules. tests/dropship.txt 59/59; with all packs business 52/55, operations 38/41 (unchanged).
 
 ## Hardening log (abilities, not knowledge — the scores above must not drop)
 - 2026-09-07 `/do` on real shops. What broke and what was changed (all in `agent/operator.py` + `agent/browser.py`):

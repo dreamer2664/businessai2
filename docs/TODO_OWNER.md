@@ -44,8 +44,9 @@ Reality check on 2026-09-09 with the real browser:
       inbox' · 'any leads?', /status mail line; docs/MAILBOX.md; mailbox 43/43 + live) — labels (Verification / Leads / Alerts),
       code fetching, tidy inbox; sign-up training on the local fake sites (accounts 18/18 covers it), real sign-ups only on
       owner-approved ones.
-- [ ] H. Knowledge — pack #3 (dropshipping/used-goods/marketplaces): seed exists (37 guides); grow to ~150–200 pages,
-      scored, size-budgeted.
+- [x] H. Knowledge — pack #3 (2026-09-09, dropship.kdw 2.7 MB: 176 guides / 8,313 passages — dropshipping, used goods &
+      reselling, marketplace fees, EU rules; tests/dropship.txt 59/59 alone, 57/59 with all packs; business 52/55 and
+      operations 38/41 unchanged; on the GitHub Release, the PC fetches it by itself on restart; docs/PACKS.md).
 - [ ] I. Thinking — the live viewer shows plan → critique → act per step; the reflection is the agent's own words,
       not a template.
 
