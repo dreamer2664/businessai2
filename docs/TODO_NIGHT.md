@@ -24,3 +24,4 @@ build on `night/marathon`, merge per item only when the full battery holds.
 ## Log
 - 2026-09-09: list created. Q&A pending (heartbeat path, fallback scope, YouTube key). Starting with recon reads.
 - 2026-09-09: owner answers: heartbeat = owner sends PC google_token.json after connect fixed (token path); fallback = Gmail + backup Telegram bot; YouTube = zero-intervention browser-first (API optional later). PC bot down at 00:01 UTC (message untouched 5+ min) → sandbox standby bot. Snapshot lessons: .git/config excluded (re-add remote), modes stripped, llm/chromium/pip wiped (128MB cap + name exclusions) → scripts/sandbox_wake.sh repairs.
+- 2026-09-09 00:35 UTC: Google CONNECTED (chat-path OAuth, send scope). Heartbeat doc live. Marathon 8%. Owner to sleep; resume on 'go'.
