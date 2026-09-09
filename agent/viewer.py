@@ -39,7 +39,7 @@ PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>Business AI �
  #plan .goal{color:#fff;font-weight:600}#plan ol{margin:6px 0 0 18px;padding:0}#plan li{padding:1px 0;color:#999}
  #plan li.doing{color:#ffd166}#plan li.done{color:#6c6;text-decoration:line-through}
 #think{background:#161616;border-bottom:1px solid #333;padding:8px 10px;font-size:13px;display:none}
-#think .goal{color:#fff;font-weight:600}
+#think .goal{color:#fff;font-weight:600}#think .cyc{border-top:1px solid #222;padding:3px 0;font-size:12px}
  #timer{float:right;font-variant-numeric:tabular-nums;font-size:22px;font-weight:700;padding:0 6px;border-radius:6px}
  #timer.ok{color:#6c6}#timer.warn{color:#ffd166}#timer.late{color:#f66;animation:blink 1s step-end infinite}#timer.slow{color:#9ad;font-size:15px}
  @keyframes blink{50%{opacity:.4}}
@@ -66,6 +66,11 @@ function renderPlan(p){const el=document.getElementById('plan');if(!p||!p.goal){
 function renderThink(t){const el=document.getElementById('think');if(!t){el.style.display='none';return;}el.style.display='block';
  let h='<div class=goal>🧠 Thinking</div><div>'+esc(t.why)+'</div><div style="color:#bbb">'+esc(t.status)+'</div>';
  h+='<div style="color:#888">Queue: '+esc(t.queue)+'</div>';
+ if(t.cycle&&t.cycle.length){h+='<div style="margin-top:6px;color:#9ad">Step by step:</div>';t.cycle.slice(-4).forEach(c=>{
+  const col=c.verdict==='ok'?'#6c6':c.verdict==='doing'?'#ffd166':'#f96';
+  h+='<div class="cyc"><div><b>'+c.n+'.</b> <span style="color:#ddd">plan:</span> '+esc(c.plan)+'</div>';
+  if(c.acts&&c.acts.length){h+='<div style="color:#bbb;padding-left:14px">did: '+esc(c.acts.slice(-4).join(', '))+'</div>';}
+  h+='<div style="padding-left:14px;color:'+col+'">check: '+esc(c.critique)+' <span style="color:#666">('+c.secs+' s)</span></div></div>';});}
  if(t.lessons&&t.lessons.length){h+='<div style="margin-top:4px;color:#9ad">Lessons:</div>';t.lessons.forEach(l=>{h+='<div>• '+esc(l)+'</div>';});}
  el.innerHTML=h;}
 function esc(x){return String(x).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}

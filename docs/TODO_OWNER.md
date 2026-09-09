@@ -47,8 +47,10 @@ Reality check on 2026-09-09 with the real browser:
 - [x] H. Knowledge — pack #3 (2026-09-09, dropship.kdw 2.7 MB: 176 guides / 8,313 passages — dropshipping, used goods &
       reselling, marketplace fees, EU rules; tests/dropship.txt 59/59 alone, 57/59 with all packs; business 52/55 and
       operations 38/41 unchanged; on the GitHub Release, the PC fetches it by itself on restart; docs/PACKS.md).
-- [ ] I. Thinking — the live viewer shows plan → critique → act per step; the reflection is the agent's own words,
-      not a template.
+- [x] I. Thinking (2026-09-09 night: agent/mind.py cycle — each step on the live screen and in /thinking shows plan (what + why),
+      did (hosts read, walls, documents) and check (verdict in plain words, green/yellow/orange); the after-job lesson is built
+      from what really happened (weak step / slowest step / sources that did the work), the stock "went fine" line is gone;
+      only bad-run lessons become next-plan advice; think 12→21, mind 42, talk 463; docs/THINKING.md).
 
 ## Log
 - 2026-09-09: list written after the audit; A/B/C first because they are what the owner sees every day.

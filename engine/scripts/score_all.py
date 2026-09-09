@@ -48,7 +48,7 @@ CONFIG = {
     "score_sellers": ([], 300, True), "score_shopfacts": ([], 180, True),
     "score_sites": ([], 600, True), "score_stop": ([], 120, False),
     "score_store": ([], 180, False), "score_study": ([], 120, False),
-    "score_talk": ([], 300, False), "score_walls": ([], 300, True),
+    "score_talk": ([], 420, False), "score_walls": ([], 300, True),
     "score_warmup": ([], 300, "model"),
     "practice_day": ([], 900, "slow"), "practice_week": ([], 900, "slow"),
 }
