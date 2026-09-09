@@ -7,6 +7,7 @@ import json
 import os
 import re
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -90,6 +91,25 @@ check("subito item: deep facts", si.get("_price") == 15.0 and si.get("Location")
       and si.get("Listed") == "2026-09-08", str(si))
 si_fb = M.parse_subito_item(nojson(fix("subito_item.html")))
 check("subito item: fallback keeps price+shipping", si_fb.get("_price") == 15.0 and "Shipping" in si_fb, str(si_fb))
+
+# ---- pure: subito, 2026 layout (captured live 2026-09-09, sellers anonymised) -------------------------
+ls_ = M.parse_subito_search(fix("subito_search_live.html"))
+check("subito 2026 search: __NEXT_DATA__ AdItems → title/price/url/location/condition/size/shipping; footer links ignored",
+      len(ls_) == 3 and ls_[1]["title"].startswith("Sottopiedi GRUNLAND") and ls_[1]["price"] == 4.0 and ls_[1]["location"] == "Gavardo (BS)"
+      and ls_[1]["condition"] == "new with tags" and ls_[1]["size"] == "40" and ls_[1]["brand"] == "Grünland" and ls_[1]["shipping"].startswith("TuttoSubito")
+      and ls_[2]["condition"] == "like new" and all("info.subito.it" not in c["url"] for c in ls_), str(ls_[:2]))
+ls_fb = M.parse_subito_search(nojson(fix("subito_search_live.html")))
+check("subito 2026 search: DOM fallback keeps only real ad links", len(ls_fb) == 3 and all(re.search(r"-\d{3,}\.htm$", c["url"]) for c in ls_fb)
+      and ls_fb[0]["title"] == "Ciabatte da uomo antiscivolo, nuove", str(ls_fb))
+lsi = M.parse_subito_item(fix("subito_item_live.html"))
+check("subito 2026 item: price/location/condition/size/brand/seller/rating/since/shipping/delivery/listed",
+      lsi.get("_price") == 4.0 and lsi.get("Location") == "Gavardo (BS)" and lsi.get("Condition (as listed)") == "new with tags" and lsi.get("Size") == "40"
+      and lsi.get("Brand") == "Grünland" and lsi.get("Seller") == "Venditore_demo" and lsi.get("Rating") == "4.5/5" and lsi.get("Seller since") == "febbraio 2018"
+      and lsi.get("Shipping") == "TuttoSubito from € 2,39" and lsi.get("Delivery time") == "2 - 6 giorni lavorativi" and lsi.get("Listed") == "7 set"
+      and lsi.get("Ships from / origin") == "Italy" and lsi.get("Seller declares") == "genuine article" and lsi.get("_marketplace") == "subito", str(lsi))
+
+lnp = M.parse_subito_item(fix("subito_item_noprice.html"))
+check("subito 2026 item without a price: no € stolen from the ads around ('200 €' Telepass banner)", "_price" not in lnp and lnp.get("Location") == "Gavardo (BS)", str(lnp.get("Price")))
 
 # ---- pure: facebook waters-only ------------------------------------------------------
 v_login, n_login = M.facebook_probe(fix("fb_wall.html"))
@@ -280,6 +300,24 @@ check("sellers: API 401 → back-off recorded, DOM cards still used", len(cards6
 fb7 = FakeBrowser()
 S.candidates(fb7, "ciabatte sughero", n=3, sites=["vinted"], price_to=20)
 check("sellers: owner's max € goes into the vinted search itself (price_to)", any("price_to=20" in u for u in fb7.api_calls) and any("price_to=20" in u for u in fb7.opened), f"{fb7.api_calls[:1]} {fb7.opened[:1]}")
+class NoisyBrowser(FakeBrowser):
+    """A 2026 subito page as the generic pass sees it: other ads with prices, a menu with 'Console e Videogiochi', the site's own footer socials."""
+    def open(self, url):
+        self.opened.append(url)
+        self.html = fix("subito_item_live.html").replace("<main>", "<main><nav>Console e Videogiochi · Telepass 200 € l'anno</nav>").replace("</body>", '<footer><a href="https://www.instagram.com/subitoit">ig</a><a href="https://www.tiktok.com/@subito">tt</a></footer></body>')
+        return "opened"
+
+nb = NoisyBrowser()
+Ln = S.read_listing(nb, "https://www.subito.it/abbigliamento-accessori/sottopiedi-grunland-in-sughero-e-pelle-n-40-brescia-659833013.htm")
+fn_ = Ln.get("facts", {})
+check("sellers: on a marketplace page the deep reader wins — no phantom price/materials, no footer socials, seller = profile name",
+      fn_.get("_price") == 4.0 and fn_.get("Materials") is None and Ln.get("socials") == [] and Ln.get("seller") == "Venditore_demo"
+      and fn_.get("Rating") == "4.5/5" and fn_.get("_marketplace") == "subito", str({k: v for k, v in fn_.items() if k != "Description"}) + str(Ln.get("socials")))
+from agent.sellers import _months_since
+nop = dict(fn_); nop.pop("_price"); nop["Price"] = "not stated"; nop["Seller since"] = time.strftime("%B %Y").lower()
+g7, _, p7, c7 = reliability(nop, "", [])
+check("sellers: 'price not stated' + brand-new profile are flagged; 'since 2018' is a plus", any("price not stated" in c for c in c7) and any("new on the site" in c for c in c7)
+      and _months_since("febbraio 2018") > 24 and any("since febbraio 2018" in p for p in reliability(fn_, "", [])[2]), f"{c7} {reliability(fn_, '', [])[2]}")
 fb3 = FakeBrowser()
 Lf = S.read_listing(fb3, "https://www.facebook.com/marketplace/item/1")
 walled = FakeBrowser(status="captcha")

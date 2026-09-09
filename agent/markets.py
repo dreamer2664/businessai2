@@ -437,59 +437,112 @@ def parse_vinted_item(html):
 
 # ---- subito.it ---------------------------------------------------------------------------
 
+def _subito_feature(ad, key):
+    f = (ad.get("features") or {}).get(key) or {}
+    vals = f.get("values") or []
+    return str(vals[0].get("value") or "") if vals and isinstance(vals[0], dict) else ""
+
+
+def _subito_ad_card(ad):
+    """One AdItem from the 2026 __NEXT_DATA__ list → card dict (title, price, url, location, condition, size, brand, shipping, listed, seller)."""
+    title = str(ad.get("subject") or ad.get("title") or "").strip()
+    urls = ad.get("urls") or {}
+    url = str(urls.get("default") or ad.get("url") or ad.get("link") or "").strip()
+    if not (title and url):
+        return None
+    geo = ad.get("geo") or {}
+    town = (geo.get("town") or {}).get("value") if isinstance(geo.get("town"), dict) else ""
+    city = (geo.get("city") or {}).get("shortName") if isinstance(geo.get("city"), dict) else ""
+    region = (geo.get("region") or {}).get("value") if isinstance(geo.get("region"), dict) else ""
+    loc = (f"{town} ({city})" if town and city and town != city else town or city or region or "")
+    adv = ad.get("advertiser") or {}
+    card = {"title": title[:120], "price": _money(_subito_feature(ad, "/price")), "url": url, "location": str(loc)[:60],
+            "condition": subito_condition(_subito_feature(ad, "/item_condition")), "size": _subito_feature(ad, "/fashion/size")[:20], "brand": _subito_feature(ad, "/fashion/brand")[:40] or _subito_feature(ad, "/brand")[:40],
+            "shipping": "TuttoSubito" if _subito_feature(ad, "/item_shippable") in ("Sì", "1", "true") else "", "listed": str(ad.get("date") or "")[:10],
+            "seller": str(adv.get("name") or "")[:40], "seller_type": "company" if adv.get("company") else "private"}
+    cost = _subito_feature(ad, "/item_shipping_cost_tuttosubito")
+    if cost and card["shipping"]:
+        card["shipping"] = f"TuttoSubito from {cost}"
+    return card
+
+
 def parse_subito_search(html, limit=12):
-    """Search page → [{title, price, url, location}]."""
+    """Search page → [{title, price, url, location, …}]. 2026 __NEXT_DATA__ (initialState.items.originalList) first,
+    older embedded lists next, then listing links from the DOM (only real ad pages: /<category>/<slug>-<id>.htm)."""
     out, seen = [], set()
     for blob in _script_blobs(html):
-        box = _walk(blob, ("adverts", "ads", "listings", "results"))
-        ads = None
-        if isinstance(box, dict):
-            for k in ("adverts", "ads", "listings", "results"):
-                if isinstance(box.get(k), list):
-                    ads = box[k]
-                    break
+        lst = _walk(blob, ("originalList",))
+        ads = lst.get("originalList") if isinstance(lst, dict) else None
+        if not isinstance(ads, list):
+            box = _walk(blob, ("adverts", "ads", "listings", "results"))
+            if isinstance(box, dict):
+                for k in ("adverts", "ads", "listings", "results"):
+                    if isinstance(box.get(k), list):
+                        ads = box[k]
+                        break
         for ad in ads or []:
             if not isinstance(ad, dict):
                 continue
-            title = str(ad.get("title") or ad.get("subject") or "").strip()
-            url = str(ad.get("url") or ad.get("link") or "").strip()
-            if url.startswith("/"):
-                url = "https://www.subito.it" + url
-            if not (title and url) or url in seen or "subito.it" not in url:
+            if ad.get("kind") and ad.get("kind") != "AdItem":
                 continue
-            seen.add(url)
-            out.append({"title": title[:120], "price": _money(ad.get("price")), "url": url,
-                        "location": str(ad.get("location") or ad.get("city") or "")[:60]})
+            if ad.get("kind") == "AdItem" or "features" in ad:
+                card = _subito_ad_card(ad)
+            else:
+                title = str(ad.get("title") or ad.get("subject") or "").strip()
+                url = str(ad.get("url") or ad.get("link") or "").strip()
+                if url.startswith("/"):
+                    url = "https://www.subito.it" + url
+                card = {"title": title[:120], "price": _money(ad.get("price")), "url": url,
+                        "location": str(ad.get("location") or ad.get("city") or "")[:60]} if title and url else None
+            if not card or card["url"] in seen or "subito.it" not in card["url"]:
+                continue
+            seen.add(card["url"])
+            out.append(card)
             if len(out) >= limit:
                 return out
     if out:
         return out
-    for m in re.finditer(r'<a[^>]+href="((?:https://[\w.]*subito\.it)?/[^"\']*?\.htm[^"\']*)"[^>]*>(.*?)</a>', html, re.S | re.I):
+    for m in re.finditer(r'<a[^>]+href="((?:https://www\.subito\.it)?/[a-z0-9-]+/[a-z0-9-]+-\d{3,}\.htm[^"\']*)"[^>]*>(.*?)</a>', html, re.S | re.I):
         url = m.group(1) if m.group(1).startswith("http") else "https://www.subito.it" + m.group(1)
         if url in seen:
             continue
         seen.add(url)
         card = _text_of(m.group(2))
+        lab = re.search(r'aria-label="([^"]+)"', m.group(0))
         pm = re.search(r"(€\s?[\d.,]+|\d[\d.,]*\s?€|EUR\s?[\d.,]+)", card)
-        title = re.sub(r"(€\s?[\d.,]+|\d[\d.,]*\s?€|EUR\s?[\d.,]+)", "", card).strip(" ·-,") or "Subito item"
+        title = re.sub(r"(€\s?[\d.,]+|\d[\d.,]*\s?€|EUR\s?[\d.,]+)", "", card).strip(" ·-,") or (_html_unescape(lab.group(1)) if lab else "") or "Subito item"
         out.append({"title": title[:120], "price": _money(pm.group(1)) if pm else None, "url": url, "location": ""})
         if len(out) >= limit:
             break
     return out
 
 
+_SUBITO_COND = {"nuovo - mai usato in confezione originale": "new with tags", "nuovo - mai usato": "new", "ottimo - come nuovo": "very good", "ottimo": "very good",
+                "come nuovo - perfetto o ricondizionato": "like new", "come nuovo": "like new",
+                "buono - lievi segni di usura": "good", "buono": "good", "discreto - segni di usura evidenti": "satisfactory", "discreto": "satisfactory",
+                "da riparare - non funzionante": "for parts", "ricondizionato": "refurbished"}
+
+
+def subito_condition(raw):
+    c = (raw or "").strip().lower()
+    return _SUBITO_COND.get(c, c[:40])
+
+
 def parse_subito_item(html):
-    """Item page → facts dict (Price, Location, Seller type, Shipping, Description, Date)."""
+    """Item page → facts dict (Price, Location, Seller, Seller type, Rating, Shipping, Delivery time, Condition, Size, Brand, Listed, Description).
+    Layers: JSON-LD Product + old __NEXT_DATA__ advert blob, then the labelled text of the 2026 page ('Dati Principali', 'Modalità di consegna')."""
     facts = {}
     for blob in _script_blobs(html):
         if isinstance(blob, dict) and blob.get("@type") in ("Product", "Offer", "ClassifiedAd"):
             offers = blob.get("offers") or {}
             price = _money(offers.get("price") if isinstance(offers, dict) else None) or _money(blob.get("price"))
             if price:
-                facts["Price"] = f"€ {price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                facts["Price"] = _fmt_eur(price)
                 facts["_price"] = price
             if blob.get("description") and "Description" not in facts:
-                facts["Description"] = str(blob["description"])[:400]
+                facts["Description"] = _html_unescape(str(blob["description"]))[:400]
+            if isinstance(offers, dict) and offers.get("availability") and "Availability" not in facts:
+                facts["Availability"] = "available" if "InStock" in str(offers["availability"]) else "not available"
         ad = blob.get("advert") or blob.get("ad") if isinstance(blob, dict) else None
         if ad is None:
             ad = _walk(blob, ("seller_type", "ship_enabled", "ad_id")) if isinstance(blob, (dict, list)) else None
@@ -497,7 +550,7 @@ def parse_subito_item(html):
             continue
         price = _money(ad.get("price"))
         if price and "Price" not in facts:
-            facts["Price"] = f"€ {price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            facts["Price"] = _fmt_eur(price)
             facts["_price"] = price
         loc = ad.get("location") or ad.get("city") or ((ad.get("geo") or {}) if isinstance(ad.get("geo"), dict) else {})
         loc = loc.get("city") if isinstance(loc, dict) else loc
@@ -512,18 +565,64 @@ def parse_subito_item(html):
             facts["Description"] = str(ad["description"])[:400]
         if ad.get("date") or ad.get("published"):
             facts["Listed"] = str(ad.get("date") or ad.get("published"))[:30]
-        if facts:
+        if facts.get("_price"):
             break
-    if "Price" not in facts:
-        from .sellers import price_of
-        p = price_of(_text_of(html))
+    txt = _text_of(html)
+    if "Price" not in facts:                                            # "… Gavardo (BS) 4 € Spedizione …" — the price sits right after the town; never a random € from the ads around
+        m = re.search(r"\([A-Z]{2}\)\s+(\d[\d.,]*)\s?€", txt)
+        p = _money(m.group(1)) if m else None
+        if p is None and not re.search(r"\([A-Z]{2}\)\s+(?:Contatta|Spedizione)", txt) and not any(isinstance(b_, dict) and b_.get("@type") == "Product" for b_ in _script_blobs(html)):
+            from .sellers import price_of
+            p = price_of(txt)
         if p:
-            facts["Price"] = f"€ {p:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            facts["Price"] = _fmt_eur(p)
             facts["_price"] = p
-    if "Shipping" not in facts:
-        ship = re.search(r"(tuttosubito|spedizione (?:disponibile|inclusa|tracciata))", _text_of(html), re.I)
-        if ship:
-            facts["Shipping"] = ship.group(1).strip()[:80]
+    # 2026 page: the visible labels are stable ('Dati Principali', 'Modalità di consegna', 'Valutazione: 4,5 su 5', 'Pubblica da …')
+    if "Location" not in facts:                                        # "… Gavardo (BS) 4 € Spedizione …": the town right before the price
+        m = re.search(r"([A-ZÀ-Ü][\w'À-ÿ]+(?:\s(?:[A-ZÀ-Ü][\w'À-ÿ]+|di|del|della|sul|in|al|a))*)\s\(([A-Z]{2})\)\s+(?:\d[\d.,]*\s?€|Contatta|Spedizione)", txt)
+        if m:
+            facts["Location"] = f"{m.group(1)} ({m.group(2)})"[:60]
+    m = re.search(r"\b(?:Condizione|Condizioni)\s+(Nuovo - mai usato in confezione originale|Nuovo - mai usato|Come nuovo - perfetto o ricondizionato|Ottimo - come nuovo|Buono - lievi segni di usura|Discreto - segni di usura evidenti|Da riparare - non funzionante|Ricondizionato|Come nuovo|Nuovo|Ottimo|Buono|Discreto|Usato)\b", txt)
+    if m and "Condition (as listed)" not in facts:
+        facts["Condition (as listed)"] = _SUBITO_COND.get(m.group(1).lower(), m.group(1).lower())
+    m = re.search(r"\bTaglia\s+([A-Z0-9/.,]{1,8})\b", txt)
+    if m and "Size" not in facts:
+        facts["Size"] = m.group(1)
+    m = re.search(r"\bMarca\s+([A-ZÀ-Üa-z0-9][\w'À-ÿ&.-]{1,30}(?:\s[A-Z][\w'À-ÿ&.-]{1,20})?)(?=\s+(?:Modalità|Materiale|Colore|Genere|Tipologia|Descrizione|$))", txt)
+    if m and "Brand" not in facts:
+        facts["Brand"] = m.group(1).strip()[:40]
+    m = re.search(r"\bValutazione:\s*(\d(?:[.,]\d)?)\s*su\s*5", txt)
+    if m:
+        facts["Rating"] = m.group(1).replace(",", ".") + "/5"
+        pre = txt[max(0, m.start() - 80):m.start()]
+        n = re.search(r"([A-ZÀ-Ü][\w'À-ÿ.-]{1,30}(?:\s[A-ZÀ-Ü][\w'À-ÿ.-]{1,30})?)\s+\d(?:[.,]\d)?\s*$", pre)
+        if n and "Seller" not in facts:
+            facts["Seller"] = n.group(1).strip()[:40]
+    m = re.search(r"\bPubblica da\s+([a-zà-ù]+\s+\d{4})", txt)
+    if m:
+        facts["Seller since"] = m.group(1)
+    if re.search(r"\bScrive molte recensioni\b", txt):
+        facts["Seller note"] = "writes many reviews"
+    if "Seller type" not in facts:
+        facts["Seller type"] = "company" if re.search(r"\b(Azienda|Negozio|Partita IVA|Rivenditore)\b", txt[:20000]) and not re.search(r"\bPrivato\b", txt[:20000]) else "private"
+    m = re.search(r"\bSpedizione da\s*(\d[\d.,]*)\s?€", txt)
+    if m:
+        facts["Shipping"] = f"TuttoSubito from {_fmt_eur(_money(m.group(1)))}"
+    elif re.search(r"\bSpedizione disponibile\b|\bTuttoSubito\b", txt) and "Shipping" not in facts:
+        facts["Shipping"] = "ships (TuttoSubito)"
+    elif re.search(r"\bSolo ritiro a mano\b|\bRitiro a mano\b", txt) and "Shipping" not in facts:
+        facts["Shipping"] = "pickup only"
+    m = re.search(r"\bConsegna prevista entro\s+(\d{1,2}\s*-\s*\d{1,2}\s+giorni lavorativi)", txt)
+    if m and "Delivery time" not in facts:
+        facts["Delivery time"] = m.group(1)
+    m = re.search(r"\b(\d{1,2}\s+(?:gen|feb|mar|apr|mag|giu|lug|ago|set|ott|nov|dic)\w*)\s+alle\s+\d{1,2}:\d{2}\b", txt)
+    if m and "Listed" not in facts:
+        facts["Listed"] = m.group(1)
+    if "Location" in facts:
+        facts.setdefault("Ships from / origin", "Italy")
+    if re.search(r"Il venditore dichiara che il bene .{0,40} è originale", txt):
+        facts["Seller declares"] = "genuine article"
+    facts["_marketplace"] = "subito"
     return facts
 
 

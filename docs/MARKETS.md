@@ -39,6 +39,21 @@ Live result (sandbox, 40 s, 3 listings): every fact above filled for all three s
 buyers' words quoted, the € 20 limit applied. Fixtures for the tests are the real pages
 captured that day with sellers anonymised (`tests/market/vinted_*_live.html`, `vinted_*.json`).
 
+## subito.it: same treatment (measured live 2026-09-09)
+
+Search pages open fine for a plain visitor and carry `__NEXT_DATA__` with the whole ad
+list (title, price, town + province, condition, size, brand, TuttoSubito cost, date,
+private/company). Item pages are JS-rendered (plain HTTP → 403; the browser is fine):
+JSON-LD gives price + description, the visible labels give the rest — *Dati Principali*
+(condition, size, brand), the seller card (first name, rating x/5, "Pubblica da <month year>"),
+*Modalità di consegna* (TuttoSubito from € N, delivery 2–6 working days), "Il venditore
+dichiara che il bene è originale". A listing without a price stays "not stated" — the
+€ figures of the banners around it are never borrowed. Private sellers show only a first
+name, so I never search the web for "reviews" of them (that would pin strangers' words on
+them); the rating and the account age carry the verdict.
+
+Live result (sandbox, 36 s, 3 listings): all facts filled, the € 20 limit applied.
+
 ## Politeness (always on)
 
 - At least **4 seconds** between hits on the same site.
@@ -67,5 +82,5 @@ or log in on my live screen and I'll read it with you. No bypass is ever attempt
   tests below catch it.
 - eBay/Amazon/Etsy/depop/wallapop: generic reading only (no deep reader yet).
 
-Offline proof: `python3 engine/scripts/score_markets.py` (31/31 anywhere,
-34/34 where a browser is installed) · `timeout 280 python3 engine/scripts/score_sellers.py` (34/34, PC).
+Offline proof: `python3 engine/scripts/score_markets.py` (37/37 anywhere,
+40/40 where a browser is installed) · `timeout 280 python3 engine/scripts/score_sellers.py` (34/34, PC).

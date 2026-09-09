@@ -27,9 +27,10 @@ Reality check on 2026-09-09 with the real browser:
 - [ ] E. Time: "at least N hours" = a floor (the job keeps going, deeper reading + project work, never idle filler),
       "at most / in N" = a ceiling, unspecified = the agent picks and says why. Project list: brainstorms become
       projects (state/projects.json), the next free window continues them.
-- [ ] F. Marketplaces — vinted + subito readers exist (markets.py, fixtures) but have never been run against the live
-      sites from the PC; measure block rates *politely* first (throttle, real UA, no stealth), then decide with the owner.
-      Facebook: waters only. Arbitrage: cross-check with eBay sold listings (public pages).
+- [x] F. Marketplaces (2026-09-09 night, 9be45ce + next: measured live from the sandbox — Vinted and subito both serve a plain
+      headless visitor, no walls in ~40 polite hits; readers rewritten for the 2026 layouts, Vinted's own page JSON gives
+      seller location / feedback split / buyers' words / shipping; markets 20→40, sellers 34; docs/MARKETS.md). Still to do
+      on this item: the same live check from the PC, Facebook stays waters-only, eBay sold-listings cross-check (arbitrage).
 - [ ] G. Gmail as a tool — labels (Verification / Leads / Alerts), code fetching, tidy inbox; sign-up training on the
       local fake sites, real sign-ups only on owner-approved ones.
 - [ ] H. Knowledge — pack #3 (dropshipping/used-goods/marketplaces): seed exists (37 guides); grow to ~150–200 pages,

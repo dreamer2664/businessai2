@@ -114,6 +114,19 @@ def seller_name(text, url, title):
     return (name or host or "unknown seller")[:40]
 
 
+_MONTHS = {m: i + 1 for i, m in enumerate(["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"])}
+_MONTHS.update({m: i + 1 for i, m in enumerate(["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"])})
+
+
+def _months_since(text, now=None):
+    """'febbraio 2018' / 'march 2026' → months elapsed, or None."""
+    m = re.match(r"\s*([a-zà-ù]+)\s+(\d{4})\s*$", (text or "").lower())
+    if not m or m.group(1) not in _MONTHS:
+        return None
+    now = now or time.localtime()
+    return (now.tm_year - int(m.group(2))) * 12 + (now.tm_mon - _MONTHS[m.group(1)])
+
+
 def reliability(facts, reviews_text, social_hits, age_hint=""):
     """(grade, verdict, pros, cons) from what was read. good | ok | bad, with reasons the owner can check."""
     pros, cons = [], []
@@ -153,6 +166,13 @@ def reliability(facts, reviews_text, social_hits, age_hint=""):
     if marketplace:
         if facts.get("Feedback") == "no feedback yet":
             cons.append("brand-new seller, no feedback yet")
+        since = _months_since(facts.get("Seller since", ""))
+        if since is not None and since < 6:
+            cons.append(f"new on the site (since {facts['Seller since']})")
+        elif since is not None and since >= 24:
+            pros.append(f"on the site since {facts['Seller since']}")
+        if facts.get("Price") == "not stated":
+            cons.append("price not stated in the listing")
         if "Verified" in facts and len(facts["Verified"].split(",")) >= 2:
             pros.append(f"verified via {facts['Verified']}")
         if facts.get("Availability") in ("reserved", "hidden / sold"):
@@ -290,16 +310,19 @@ class SellerCheck:
             verdict, note = markets.facebook_probe(b.page.content(), st)
             if verdict != "ok":
                 return {"url": url, "wall": "login" if verdict == "login" else verdict, "note": note}
-        elif "vinted." in host or "subito.it" in host:                # deep facts fill what the generic pass missed
+        elif "vinted." in host or "subito.it" in host:                # the marketplace reader is authoritative; the regex pass only fills gaps
             try:
                 deep = (markets.parse_vinted_item if "vinted." in host else markets.parse_subito_item)(b.page.content())
-                for k, v in deep.items():
-                    if k in ("Price", "_price", "Shipping", "Seller", "Feedback", "Rating", "Reviews", "Condition (as listed)") or k not in facts:
-                        facts[k] = v                                     # the structured page data beats the regex guess
+                for k in ("Price", "_price", "Materials", "Rating", "Reviews", "Shipping", "Seller", "Condition (as listed)", "Ships from / origin"):
+                    facts.pop(k, None)                                  # a marketplace page is full of other ads and menus — the generic guess is noise here
+                facts.update(deep)
+                if "_price" not in facts:
+                    facts["Price"] = "not stated"
                 if "vinted." in host:
                     buyers = markets.vinted_enrich(b, facts, self.throttle)
                     if buyers:
                         facts["_buyers"] = buyers
+                facts.setdefault("_marketplace", "vinted" if "vinted." in host else "subito")
             except Exception as e:
                 self.log("deep_facts_failed", error=str(e)[:80])
         img = None
@@ -310,7 +333,7 @@ class SellerCheck:
                 img = self._fetch_image(b, src)
         except Exception as e:
             self.log("image_failed", error=str(e)[:80])
-        socials = [{"platform": m.group(1).split(".")[0].lower(), "url": m.group(0)} for m in SOCIAL.finditer(b.page.content()[:400000])]
+        socials = [] if facts.get("_marketplace") else [{"platform": m.group(1).split(".")[0].lower(), "url": m.group(0)} for m in SOCIAL.finditer(b.page.content()[:400000])]   # a marketplace's footer icons are not the seller's
         socials = [s for s in socials if not re.search(r"/(sharer|share|intent|dialog|plugins|widgets|embed)", s["url"], re.I)]
         seen = set()
         socials = [s for s in socials if not (s["platform"] in seen or seen.add(s["platform"]))][:4]
@@ -537,6 +560,8 @@ class SellerCheck:
                     self._step(2, f"reading {L['seller']}'s feedback")
                     L["reviews"] = L["facts"]["_buyers"]
                     L.setdefault("review_sources", []).append("Vinted feedback on the seller's profile")
+                elif L["facts"].get("_marketplace"):                        # a private seller's first name is not searchable — never pin strangers' reviews on them
+                    L["reviews"] = ""
                 elif not (self.pace and self.pace.hurry()):
                     self._step(2, f"reading what buyers say about {L['seller']}")
                     L["reviews"] = self.read_reviews(b, L, product)
