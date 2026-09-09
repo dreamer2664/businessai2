@@ -101,9 +101,9 @@ class Fallback:
             return {"seen": d.get("seen", [])[-200:], "allowed": d.get("allowed", []),
                     "last_poll": d.get("last_poll", 0), "tg_down": d.get("tg_down", False),
                     "tg_offset": d.get("tg_offset", 0), "daily": d.get("daily", False),
-                    "last_check_day": d.get("last_check_day", "")}
+                    "last_check_day": d.get("last_check_day", ""), "answered": int(d.get("answered", 0))}
         except Exception:
-            return {"seen": [], "allowed": [], "last_poll": 0, "tg_down": False, "tg_offset": 0, "daily": False, "last_check_day": ""}
+            return {"seen": [], "allowed": [], "last_poll": 0, "tg_down": False, "tg_offset": 0, "daily": False, "last_check_day": "", "answered": 0}
 
     def _save(self):
         try:
@@ -188,6 +188,8 @@ class Fallback:
                 self.google.send_mail(sender, f"{REPLY_PREFIX} {subject[:60] or 'hello'}", body,
                                       thread_id=m.get("thread") or None, in_reply_to=m.get("msgid") or None)
                 handled.append((sender, subject[:60], len(body)))
+                self.state["answered"] = int(self.state.get("answered", 0)) + 1
+                self._save()
                 self.log("fallback_out", sender=sender[:60], chars=len(body))
                 for tidy in ("mark_read", "archive"):      # answered mail leaves no unread trace (best-effort)
                     try:
@@ -301,6 +303,6 @@ class Fallback:
         last = (time.strftime("%H:%M", time.localtime(self.state["last_poll"])) if self.state["last_poll"] else "never")
         daily = ("on (08–11, last " + (self.state.get("last_check_day") or "never") + ")") if self.state.get("daily") else "off (/fallback check on)"
         return (f"📧 Fallback contact — Gmail: {g} · backup bot: {b}\n"
-                f"owner mail: {addrs} · last mail check: {last} · mails answered: {len(self.state['seen'])} · morning line check: {daily}\n"
+                f"owner mail: {addrs} · last mail check: {last} · mails answered: {self.state.get('answered', 0)} · morning line check: {daily}\n"
                 f"{'⚠️ main Telegram line currently DOWN' if self.state['tg_down'] else 'main Telegram line: ok'}\n"
                 f"/fallback allow <email> · /fallback forget <email> · /fallback test · /fallback test send · /fallback check on|off|now")
