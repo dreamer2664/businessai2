@@ -249,3 +249,6 @@ VERSION 2.0 (2026-09-08): the shop grows extras and a designer — discount code
 
 ## 2026-09-09 night marathon, item 7 (queue + budgets + durations) — done
 - Mind priority queue (classify/add/next/peek/list/set/clear, persisted), 6 core queue sites converted, /queue command, Pace.over_budget + research/compare guards + idle guards, EN/IT durations + parse_duration. score_queue 20/20. Caught by the battery mid-build: tuple-style queue readers (fixed), drain wording kept stable. Fast battery: 10 PASS, 2 pre-existing PARTIAL, 2 env SKIP, 0 FAIL.
+
+## 2026-09-09 night marathon, item 2 (smarter research) — done
+- plan_queries (EN/IT intent aspects), research() multi-query with dedupe + domain cap, _synthesize (agreement + ranked facts, per-page bullets kept), outer-loop budget cut recorded. score_research 19/19 (fake browser). Fast battery: 11 PASS, 2 pre-existing PARTIAL, 2 env SKIP, 0 FAIL.

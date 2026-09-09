@@ -1,6 +1,6 @@
 {
  "branch": "night/marathon",
- "pct": 41,
+ "pct": 55,
  "rows": [
   [
    "0",
@@ -18,7 +18,7 @@
    "2",
    "Smarter research",
    "14",
-   "queued"
+   "DONE (research 19/19, battery green)"
   ],
   [
    "3",
@@ -70,8 +70,8 @@
   ]
  ],
  "latest": [
-  "Priority queue + budgets + EN/IT durations built (20/20).",
-  "Battery caught 2 regressions mid-build; fixed, 0 FAIL.",
-  "Next: item 2 (smarter research)."
+  "Smarter research built: planner + multi-source + synthesis (19/19).",
+  "Battery: 15 suites, 0 FAIL.",
+  "Next: item 4 (YouTube trending + comments)."
  ]
 }
