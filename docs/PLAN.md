@@ -255,3 +255,6 @@ VERSION 2.0 (2026-09-08): the shop grows extras and a designer — discount code
 
 ## 2026-09-09 night marathon, item 4 (YouTube) — done
 - Owner overrode API-first: browser-first, no key. InnerTube browse/next are 400/locked and feeds are empty shells, so: extract_trending/comments (rendered-DOM, PC browser) + top_for_topic (search page, live-verified: millions of views parsed) + transcript hardened (429 backoff, 4-track fallback; sandbox caption CDN throttled, PC verifies). score_youtube 12/12. Fast battery: 12 PASS, 2 pre-existing PARTIAL, 2 env SKIP, 0 FAIL.
+
+## 2026-09-09 night marathon, item 8 (pack #3 seed) — done
+- 37 verified dropshipping guides (fetch filtered 60 candidates) → 2,181 passages, 0.59M chars, 69% kept. tests/dropship.txt 36 questions, 36/36 grounded in passages. packs/feed_add.py grows packs across sessions (renumbered aids). Term index (5,321 terms, 42KB) makes grounding re-checkable offline. score_dropship 10/10. .kdw build + score_pack run on the PC (needs the C engine).

@@ -1,6 +1,6 @@
 {
  "branch": "night/marathon",
- "pct": 62,
+ "pct": 72,
  "rows": [
   [
    "0",
@@ -54,7 +54,7 @@
    "8",
    "Pack #3 dropshipping feed",
    "10",
-   "queued"
+   "DONE (seed 10/10, build on PC)"
   ],
   [
    "9",
@@ -70,8 +70,8 @@
   ]
  ],
  "latest": [
-  "YouTube built browser-first: trending/comments + ranked tops (12/12, live ok).",
-  "Battery: 16 suites, 0 FAIL.",
-  "Next: item 8 (pack #3 dropshipping feed)."
+  "Pack #3 seeded: 37 guides, 2,181 passages, 36 grounded questions (10/10).",
+  "Feed script grows packs across sessions; .kdw builds on the PC.",
+  "Next: item 9 (viewer thinking panel)."
  ]
 }

@@ -17,7 +17,7 @@ build on `night/marathon`, merge per item only when the full battery holds.
 - [x] 5. Google Docs layouts (core writer live-verified; per-type templates ride with item 2) — native Docs API tables/styles per report type — 8%
 - [ ] 6. Gmail mastery + safe-signup training (fakes first, real signups only on owner-approved sites) — 8%
 - [x] 7. Time budgets + priority queue (High=scrape, Medium=log, Low=brainstorm) + duration parsing — 8%
-- [ ] 8. Pack #3 dropshipping/business feed + tests/dropship.txt (seed tonight, grow across sessions) — 10%
+- [x] 8. Pack #3 dropshipping/business feed + tests/dropship.txt (seed tonight, grow across sessions) — 10%
 - [ ] 9. Viewer reasoning upgrade — thinking panel for owner + agent — 6%
 - [x] 10. Heartbeat/progress system + docs + full regression battery — 7%
 
@@ -30,3 +30,4 @@ build on `night/marathon`, merge per item only when the full battery holds.
 - 2026-09-09 03:x UTC: item 7 DONE (queue 20/20, battery green) — merged to main. Heartbeat 41%. Next: item 2 (smarter research).
 - 2026-09-09 0x:x UTC: item 2 DONE (research 19/19, battery green) — merged to main. Heartbeat 55%. Next: item 4 (YouTube).
 - 2026-09-09 0x:x UTC: item 4 DONE (youtube 12/12 + live, battery green) — merged to main. Heartbeat 62%. Next: item 8 (pack #3).
+- 2026-09-09 0x:x UTC: item 8 DONE (seed 10/10, build on PC) — merged to main. Heartbeat 72%. Next: item 9 (viewer thinking panel).
