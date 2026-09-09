@@ -57,6 +57,7 @@ class Google:
         self.access = None
         self.access_until = 0
         self.needs_reconnect = False
+        self.client_disabled = False    # Google switched the OAuth client off (disabled_client): links are useless until it is re-enabled
         self.last_error = ""
         self._folder_id = None
         self._pending = None            # {"state", "verifier", "redirect", "server"} while a consent flow is open
@@ -102,6 +103,8 @@ class Google:
                     "(Console → Google Auth Platform → Clients → Desktop app → Download JSON).")
         if not self.token.get("refresh_token"):
             return "Google: key present, not connected yet — run `python3 -m agent.google connect` on my machine, or say 'connect google' and I send you the link."
+        if self.client_disabled:
+            return f"Google: OFF — {self.last_error}"
         if self.needs_reconnect:
             return f"Google: connection expired (private apps are cut after 7 days) — say 'connect google' and I send you a new link. Last error: {self.last_error}"
         return f"Google: connected as {self.account() or 'the app account'} · Drive folder “{LIBRARY_FOLDER}” · Gmail read + send"
@@ -152,6 +155,7 @@ class Google:
         try:
             self._exchange(code["code"], p["verifier"], p["redirect"])
             self.needs_reconnect = False
+            self.client_disabled = False
             self.last_error = ""
             self.log("google_connected", account=self.account())
         except Exception as e:
@@ -225,6 +229,7 @@ class Google:
         try:
             self._exchange(code, p["verifier"], p["redirect"])
             self.needs_reconnect = False
+            self.client_disabled = False
             self.last_error = ""
             self.log("google_connected", account=self.account(), via="pasted")
             return f"✅ Connected to Google as {self.account() or 'the app account'}."
@@ -254,7 +259,16 @@ class Google:
             try:
                 d = _post_form(self.client.get("token_uri", "https://oauth2.googleapis.com/token"), body)
             except GoogleError as e:
-                if "invalid_grant" in str(e) or "invalid_client" in str(e):
+                if "disabled_client" in str(e) or "deleted_client" in str(e):
+                    # not the 7-day cut: the OAuth client is switched off in Google Cloud. A new link won't help until
+                    # the owner re-enables it (or downloads a fresh client JSON) — say so instead of sending links.
+                    self.needs_reconnect = True
+                    self.client_disabled = True
+                    self.last_error = ("Google disabled the app's OAuth client in the Cloud console (error disabled_client). A new link "
+                                       "won't help: open console.cloud.google.com → Google Auth Platform → Clients, re-enable the client "
+                                       "(or make a new Desktop-app client and give me its JSON), then say 'connect google'.")
+                    self.log("google_client_disabled")
+                elif "invalid_grant" in str(e) or "invalid_client" in str(e):
                     self.needs_reconnect = True
                     self.last_error = "Google dropped the connection (7-day limit for private apps)"
                     self.log("google_needs_reconnect")

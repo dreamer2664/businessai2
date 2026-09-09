@@ -57,3 +57,9 @@ Reality check on 2026-09-09 with the real browser:
 - 2026-09-09 (night): F shipped (markets 40/40, sellers 34/34, subito live e2e), D shipped (progress 16/16 live-verified). Next: E (time floor + project list), then G/H/I.
 - 2026-09-09 (night, later): E shipped (floor 44/44). Next: G (Gmail labels/tidy), H (knowledge pages), I (plan → critique → act on the live screen).
 - 2026-09-09 (night, later): G shipped (mailbox 43/43, live labels in the real Gmail). Next: H (knowledge pages), I (plan → critique → act).
+- 2026-09-09 (night, later): H shipped (dropship.kdw 2.7 MB, 59/59; business 52/55 + operations 38/41 unchanged). **Google is OFF**:
+  the token refresh now answers `disabled_client` — the OAuth client itself is switched off in the Cloud console (not the 7-day cut;
+  Google does this to unverified apps after its notices — the three "Google notices" the mailbox filed under Alerts on 2026-09-09 were
+  probably the warning). Owner must re-enable it: console.cloud.google.com → project businessai-508000 → Google Auth Platform → Clients,
+  or create a new Desktop-app client and hand over its JSON. Until then Drive/Docs/mailbox/progress Doc are paused; the agent now says so
+  once a day in plain words instead of sending links that cannot work (gmail 9→10). Progress-Doc entry 7 (H) is pending on that.

@@ -1100,8 +1100,14 @@ class Agent:
 
     def fetch_mail_code(self, hint=""):
         """'check my email for the verification code' → Gmail (official API), newest code or link, pasted to the owner."""
+        if self.google.connected():
+            try:
+                self.google._access_token()        # one cheap probe: a disabled/expired client shows up here, before a 2-minute wait
+            except Exception:
+                pass
         if not self.google.connected():
-            self.notify("My Gmail isn't connected here — /google connect once, then I can read verification codes myself.")
+            why = self.google.status() if self.google.needs_reconnect else "/google connect once, then I can read verification codes myself."
+            self.notify("My Gmail isn't connected here — " + why)
             return
         try:
             code, mail = self.mailbox.code(hint, since_minutes=30, tries=6, wait=20)
@@ -1114,6 +1120,9 @@ class Agent:
                 return
             self.notify(f"📧 Nothing with a code{' from ' + hint if hint else ''} in the last 30 minutes (I looked 6 times over 2 minutes). Ask me again when it should have arrived, or check the spam folder.")
         except Exception as e:
+            if self.google.needs_reconnect:        # the failed call flipped the flag: say what it means, not the raw 401
+                self.notify("📧 " + self.google.status())
+                return
             self.notify(f"📧 Gmail check failed: {str(e)[:120]}")
 
     def hand_over_doc(self, path, native=None, folder="Research"):
@@ -2674,6 +2683,12 @@ class Agent:
             if not g.has_client():
                 return ("I can't connect yet: my Google key file is missing. On my machine put the OAuth client JSON from Google Cloud at "
                         ".secrets/google_client.json (Google Auth Platform → Clients → Desktop app → Download JSON), then say 'connect google' again.")
+            if getattr(g, "client_disabled", False):
+                # the owner may have just re-enabled it: probe once, and only send a link if Google accepts the client again
+                try:
+                    g._access_token()
+                except Exception:
+                    return "🔑 " + g.last_error
             try:
                 url = g.connect_link(prefer_port=8097)
             except Exception as e:
@@ -2719,7 +2734,10 @@ class Agent:
         g = self.google
         if g.needs_reconnect and time.time() - self.google_reconnect_told > 86400:
             self.google_reconnect_told = time.time()
-            self.notify("🔑 Google cut my Drive/Gmail connection (it does that every 7 days for private apps). " + self.google_command("connect"))
+            if getattr(g, "client_disabled", False):
+                self.notify("🔑 " + g.last_error + " Until then Drive, Docs and the mailbox are paused (nothing is lost).")
+            else:
+                self.notify("🔑 Google cut my Drive/Gmail connection (it does that every 7 days for private apps). " + self.google_command("connect"))
 
     def _safe(self, fn, name):
         """One status line that can never kill /status: on failure the line says so and the rest still answers."""

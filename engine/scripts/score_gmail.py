@@ -167,6 +167,41 @@ def _():
     assert "In-Reply-To" not in raw, raw[:200]
 
 
+@check("disabled OAuth client: named plainly, no useless links, cleared by a real reconnect")
+def _():
+    import agent.google as G
+    g = StubGoogle()
+    g.client = {"client_id": "x", "client_secret": "y"}
+    g.token = {"refresh_token": "r"}
+    g.access = None
+    real = G._post_form
+    G._post_form = lambda url, fields: (_ for _ in ()).throw(G.GoogleError('HTTP 401 {"error": "disabled_client"}'))
+    try:
+        try:
+            g._access_token()
+        except G.GoogleError:
+            pass
+        assert g.client_disabled and g.needs_reconnect, (g.client_disabled, g.needs_reconnect)
+        st = g.status()
+        assert "OFF" in st and "console" in st.lower() and "disabled_client" in st, st
+        assert "new link" in st and "won't help" in st, st
+        # the 7-day cut is still told apart
+        g2 = StubGoogle(); g2.client = g.client; g2.token = {"refresh_token": "r"}
+        G._post_form = lambda url, fields: (_ for _ in ()).throw(G.GoogleError('HTTP 400 {"error": "invalid_grant"}'))
+        try:
+            g2._access_token()
+        except G.GoogleError:
+            pass
+        assert g2.needs_reconnect and not g2.client_disabled and "7 days" in g2.status(), g2.status()
+    finally:
+        G._post_form = real
+    # a successful token exchange clears both flags
+    g._exchange = lambda code, verifier, redirect: None
+    g._pending = {"state": "s", "verifier": "v", "redirect": "http://localhost:1/"}
+    out = g.finish_with_url("http://localhost:1/?state=s&code=c")
+    assert "Connected" in out and not g.client_disabled and not g.needs_reconnect, (out, g.client_disabled)
+
+
 def main():
     ok = 0
     for name, fn in CHECKS:
