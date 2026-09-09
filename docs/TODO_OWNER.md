@@ -78,3 +78,7 @@ Reality check on 2026-09-09 with the real browser:
   time left the research widens to a second engine, the shipping/price/spec pages inside the sites, Wikipedia and the most-watched
   YouTube video, and says so in the reply (research 30/30, sources 18/18). PC needs the pull line + `connect google` there (tokens are
   per machine). Still open from the owner's list: smarter scraper (fewer walls first, then a fuller listing card).
+- 2026-09-10 (later): smarter scraper shipped — (1) wall memory: sites/engines that blocked me go last and are skipped after two
+  walls (`/walls`, `/walls forget`), (2) fuller listing card from the shop's own product data (price+currency, stock, returns, shipping,
+  brand, warranty…). walls memory 18/18, listing 20/20. **The owner's whole list is now ticked** (A–I, disk, Google, multi-source,
+  scraper). PC still needs the pull line + `connect google`.

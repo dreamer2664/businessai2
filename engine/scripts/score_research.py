@@ -148,6 +148,9 @@ class RT(Tasks):
     def __init__(self, fake, **kw):
         super().__init__(log=lambda k, **f: None, **kw)
         self._fake = fake
+        import pathlib, tempfile
+        from agent.walls import WallMemory
+        self.walls = WallMemory(path=pathlib.Path(tempfile.mkdtemp()) / "walls.json")     # never the real state file
 
     def _session(self):
         return contextlib.nullcontext(self._fake)

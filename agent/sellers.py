@@ -14,6 +14,7 @@ import urllib.parse
 
 from .browser import BrowserError
 from . import library
+from . import listing as _listing
 from . import markets
 
 MARKETPLACES = re.compile(r"amazon\.|ebay\.|etsy\.|vinted\.|aliexpress\.|temu\.|wish\.|subito\.it|zalando\.|asos\.|shein\.|alibaba\.|dhgate\.|walmart\.|bol\.com|cdiscount\.|manomano\.|leroymerlin\.|ikea\.", re.I)
@@ -177,8 +178,25 @@ def reliability(facts, reviews_text, social_hits, age_hint=""):
             pros.append(f"verified via {facts['Verified']}")
         if facts.get("Availability") in ("reserved", "hidden / sold"):
             cons.append(f"listing is {facts['Availability']}")
-    if facts.get("Shipping", "").lower() in ("free", "gratis", "gratuita"):
-        pros.append("free shipping")
+    if facts.get("Shipping", "").lower().split(" to ")[0] in ("free", "gratis", "gratuita"):
+        pros.insert(0, "free shipping")
+    if not marketplace:                                                # what the shop's own product data says comes first — it is never cut from the 4 shown
+        av = facts.get("Availability", "")
+        head_c, head_p = [], []
+        if av in ("sold out", "discontinued", "back-order"):
+            head_c.append(f"listing is {av}")
+        elif av == "pre-order":
+            head_c.append("pre-order — not in stock yet")
+        if facts.get("Returns") == "no returns":
+            head_c.append("no returns accepted")
+        elif facts.get("Returns", "").startswith(("14", "30", "60", "90", "100", "unlimited")) or "free returns" in facts.get("Returns", ""):
+            head_p.append(f"returns: {facts['Returns']}")
+        if facts.get("Currency") and facts["Currency"] != "EUR":
+            head_c.append(f"price is in {facts['Currency']} — bank fees and customs may apply")
+        if facts.get("Warranty"):
+            head_p.append(facts["Warranty"])
+        pros[:0] = head_p
+        cons[:0] = head_c
     if age_hint:
         pros.append(age_hint)
     score = len(pros) - len(cons) - (2 if n_bad >= 3 and n_bad > n_good else 0)
@@ -273,13 +291,17 @@ class SellerCheck:
             except BrowserError as e:
                 self.log("search_failed", query=q, error=str(e)[:80])
                 continue
-            for r in results:
+            walls = getattr(self.T, "walls", None)
+            for r in (walls.order(results) if walls else results):                   # shops that walled me lately go last
                 u = r["url"]
                 host = urllib.parse.urlparse(u).netloc.replace("www.", "")
                 hosts_taken = {urllib.parse.urlparse(x["url"]).netloc.replace("www.", "") for x in out}
                 one_per_host = bool(host) and not MARKETPLACES.search(host)          # a shop = one listing; a marketplace holds many sellers
                 if u in seen or FORUM.search(u) or (one_per_host and host in hosts_taken):
                     continue
+                if walls and walls.skip(u):
+                    self.log("wall_skipped", url=u)
+                    continue                                                          # walled twice lately — not a third knock
                 if re.search(r"/(blog|news|article|guide|how-to|wiki|forum|category/blog)/", u, re.I) or re.search(r"\b(best|top \d+|review of|vs\.?)\b", r["title"], re.I) and not MARKETPLACES.search(u):
                     continue
                 if re.search(r"trustpilot|reviews\.io|sitejabber|feefo|yelp\.|/reviews?\b|recensioni", u, re.I) or re.search(r"\b(reviews?|recensioni|opinioni)\b", r["title"], re.I):
@@ -290,14 +312,20 @@ class SellerCheck:
                     break
         return out[:n]
 
-    def read_listing(self, b, url):
-        """Open a listing and pull grounded facts + the main picture (+ what the eyes see, if available)."""
+    def read_listing(self, b, url, essential=False):
+        """Open a listing and pull grounded facts + the main picture (+ what the eyes see, if available).
+        essential: the owner gave this link → a CAPTCHA may be handed to the owner for one tap."""
         b.open(url)
         st = b.status()
-        if st == "captcha" and hasattr(self.T, "pass_wall") and self.T.pass_wall(b, url):
+        if st == "captcha" and hasattr(self.T, "pass_wall") and self.T.pass_wall(b, url, essential=essential):
             st = b.status()
+        walls = getattr(self.T, "walls", None)
         if st != "ok":
+            if walls:
+                walls.hit(url, st)
             return {"url": url, "wall": st}
+        if walls:
+            walls.clear(url)
         try:
             b.dismiss_banner()
         except Exception:
@@ -306,6 +334,14 @@ class SellerCheck:
         title = (b.page.title() or "")[:120]
         facts = extract_facts(text, url)
         host = urllib.parse.urlparse(url).netloc.lower()
+        try:                                                          # the shop's own structured data (JSON-LD / Open Graph) beats my regex guesses
+            page_html = b.page.content()
+            card = _listing.card(page_html, text, url)
+            if card:
+                facts = _listing.merge(facts, card)
+                self.log("listing_card", url=url[:80], keys=len([k for k in card if not k.startswith("_")]))
+        except Exception as e:
+            self.log("listing_card_failed", error=str(e)[:80])
         if "facebook.com" in host:                                    # waters-only: probe, never wade in
             verdict, note = markets.facebook_probe(b.page.content(), st)
             if verdict != "ok":
@@ -547,7 +583,7 @@ class SellerCheck:
                 self._step(1, f"reading listing {i + 1}/{len(cands)}: {c['title'][:50]}")
                 self.log("seller_check", name=c["title"][:60])
                 try:
-                    L = self.read_listing(b, c["url"])
+                    L = self.read_listing(b, c["url"], essential=bool(urls))
                 except BrowserError as e:
                     self.log("listing_failed", url=c["url"], error=str(e)[:80])
                     continue
@@ -612,14 +648,14 @@ class SellerCheck:
                        f"Price {L['facts'].get('Price', 'n/a')}, shipping {L['facts'].get('Shipping', 'n/a')}, from {L['facts'].get('Ships from / origin', 'n/a')}. " + (counterfeit_note or ""))
         else:
             summary = ((f"I looked at the {len(options)} listing(s) you sent ({product}). " if urls else f"I looked at {len(options)} listings for {product}. ") +
-                       (f"Best bet: {best[0]['seller']} ({best[0]['facts'].get('Price', 'price n/a')}) — {best[0]['verdict']} " if best else "None of them convinced me. ") +
+                       (f"Best bet: {best[0]['seller']} ({_listing.card_line(best[0]['facts']) or 'price n/a'}) — {best[0]['verdict']} " if best else "None of them convinced me. ") +
                        (f"Skip: {', '.join(L['seller'] for L in options if L['grade'] == 'bad')}. " if any(L['grade'] == 'bad' for L in options) else "") +
                        (f"Your conditions ({cond}) are applied in the verdicts. " if cond else "") +
                        (counterfeit_note or ""))
         doc.summary(summary)
-        doc.table("Side by side", [[L["seller"], L["facts"].get("Price", "-"), L["facts"].get("Shipping", "-"), L["facts"].get("Delivery time", "-"),
-                                    L["facts"].get("Ships from / origin", "-"), {"good": "👍 good", "ok": "🤔 ok", "bad": "👎 avoid"}[L["grade"]]] for L in options],
-                  header=["Seller", "Price", "Shipping", "Delivery", "From", "Verdict"])
+        doc.table("Side by side", [[L["seller"], L["facts"].get("Price", "-"), L["facts"].get("Availability", "-"), L["facts"].get("Shipping", "-"), L["facts"].get("Delivery time", "-"),
+                                    L["facts"].get("Ships from / origin", "-"), L["facts"].get("Returns", "-"), {"good": "👍 good", "ok": "🤔 ok", "bad": "👎 avoid"}[L["grade"]]] for L in options],
+                  header=["Seller", "Price", "Stock", "Shipping", "Delivery", "From", "Returns", "Verdict"])
         for L in options:
             facts = {k: v for k, v in L["facts"].items() if not k.startswith("_")}
             if L.get("socials"):
@@ -632,6 +668,7 @@ class SellerCheck:
             doc.option(L.get("seller") or L.get("title", "?"), L["url"], price=L["facts"].get("Price", ""), image=L.get("image"), verdict=L["verdict"], grade=L["grade"],
                        facts=facts, pros=L.get("pros"), cons=L.get("cons"), note=note)
         doc.section("How I judged", ("On Vinted the seller's location, feedback split and the last feedback lines come from the seller's own public profile. " if any(L["facts"].get("_marketplace") == "vinted" for L in options) else "") +
+                                    ("Price, stock, brand, shipping and returns marked from the shop's own product data are what the shop itself publishes for search engines (JSON-LD / Open Graph). " if any(L["facts"].get("_source") == "structured data" for L in options) else "") +
                                     "Price, shipping and origin are quoted from each listing page. Reliability comes from the rating and review counts on the page, "
                                     "complaint/praise words in what buyers wrote, whether the seller has a public social page, and (when my eyes are on) whether the photo "
                                     "matches the description. Nothing was bought, no account was used.")

@@ -257,6 +257,7 @@ class Browser:
     ENGINE_HOSTS = re.compile(r"brave\.com|yahoo\.com|bing\.com|duckduckgo|/search\?|admarketplace|r\.search\.|/ct\?", re.I)
 
     engine_used = None                  # which engine answered the last search() — None when they all failed
+    walls = None                        # agent.walls.WallMemory set by Tasks — engines/sites that walled lately go last
 
     def other_engines(self):
         """The engines that did NOT answer the last search — a second opinion comes from a different index."""
@@ -285,16 +286,24 @@ class Browser:
         moves on when one shows a bot check or returns no results (headless visitors are often challenged)."""
         q = urllib.parse.quote_plus(query)
         order = [engine] if engine else ["brave", "yahoo", "bing", "duckduckgo"]
+        walls = getattr(self, "walls", None)
+        if walls is not None and not engine:
+            order = walls.engine_order(order, self.ENGINES)          # the engine that walled me an hour ago goes last
         last = ""
         for eng in order:
             try:
                 last = self.open(self.ENGINES[eng].format(q=q))
             except BrowserError as e:
                 last = str(e); continue
-            if self.status() == "ok" and self._organic(limit=3):
+            st = self.status()
+            if st == "ok" and self._organic(limit=3):
                 self.engine_used = eng
+                if walls is not None:
+                    walls.clear(self.ENGINES[eng])
                 return last
-            self.log("search_engine_skip", engine=eng, reason=self.status())
+            self.log("search_engine_skip", engine=eng, reason=st)
+            if walls is not None and st != "ok":
+                walls.hit(self.ENGINES[eng], st)
         self.engine_used = None
         return last
 

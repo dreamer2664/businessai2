@@ -276,3 +276,19 @@ VERSION 2.0 (2026-09-08): the shop grows extras and a designer — discount code
 - Bing/DDG walls in the sandbox: bing serves geo-random results to a headless visitor (its results for "bamboo toothbrush supplier europe" were BambooHR, Greek postcodes),
   html.duckduckgo shows its "anomaly" page — both are kept last in the order, and a second opinion from them is only worth 2 pages by design.
 - score_research 19 → 30, new score_sources 18/18 (both offline, in score_all). No other score moved.
+
+## 2026-09-10 — smarter scraper (owner's last open item) — done
+- **Fewer walls** (agent/walls.py): a small memory of which sites and search engines walled me, kept 7 days. Every candidate list
+  (research, compare, seller check) puts walled-lately hosts last; a host that walled twice in 2 h or four times in 24 h is skipped
+  outright ("the next site, not a third knock") — except a link the owner gave, which still gets the solvers and the owner's tap.
+  search() asks the engine that walled in the last 6 h last (Brave's CAPTCHA used to cost ~9 s on every single search before the
+  fallback to Yahoo). A clean read forgives half. `/walls` shows the list, `/walls forget [site]` resets. Nothing here passes a wall.
+- **Fuller listing card** (agent/listing.py): a product page's own structured data — JSON-LD `Product` (Shopify, WooCommerce, Magento,
+  PrestaShop, marketplaces) and Open Graph `product:` tags — read before any regex: price + currency, stock, condition, brand, SKU,
+  seller, shipping cost / destination / days, return policy, rating + reviews, materials, colour, size, warranty / measurements /
+  made-in from the description. Structured facts win; the regex pass only fills gaps (it used to read "Price 75" off an image width).
+  The verdict now says sold out / no returns / price in USD / warranty first; the side-by-side table has Stock and Returns columns;
+  the "best bet" line is the compact card line (€ 12,90 · in stock · brand X · shipping free, 2–4 days · 4.7/5 (212 reviews)).
+- Live check: howcork.com product page → JSON-LD gives $ 46,00 · in stock · brand 15:21 · four-year warranty · 10x16 cm · Stockholm, Sweden
+  where the regex pass had only "46". Category pages have no product node → {} → regex as before.
+- score_walls_memory 18/18, score_listing 20/20 (offline, in score_all). research/sellers/walls/docs re-run — no drops.

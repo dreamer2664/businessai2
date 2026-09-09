@@ -84,3 +84,7 @@ or log in on my live screen and I'll read it with you. No bypass is ever attempt
 
 Offline proof: `python3 engine/scripts/score_markets.py` (37/37 anywhere,
 40/40 where a browser is installed) · `timeout 280 python3 engine/scripts/score_sellers.py` (34/34, PC).
+
+## Walls and the listing card (2026-09-10)
+- `state/walls.json` — who walled me lately. `/walls` to see it; `/walls forget [site]` to reset. Walled hosts go last, twice-walled hosts are skipped for a while, a clean read forgives.
+- `agent/listing.py` — the product page's own JSON-LD / Open Graph data is the first source of the card; regexes only fill the gaps.

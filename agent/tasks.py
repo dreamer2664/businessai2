@@ -22,6 +22,7 @@ from . import config
 from .browser import Browser, BrowserError
 from . import sources
 from . import video
+from . import walls as _walls
 
 FORUM = re.compile(r"reddit\.com|quora\.com|facebook\.com|youtube\.com|tiktok\.com|instagram\.com|pinterest\.|x\.com|twitter\.com|linkedin\.com/posts", re.I)
 SENT = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9])")
@@ -92,6 +93,7 @@ class Tasks:
         self.memory = memory
         self._browser = None
         self._lock = threading.Lock()
+        self.walls = _walls.WallMemory(log=self.log)   # sites/engines that walled lately: last in line, skipped after two
         self.low_mem = self._mem_available_mb() < 2500
         if self.low_mem:
             self.log("low_memory_mode", available_mb=self._mem_available_mb())
@@ -118,6 +120,7 @@ class Tasks:
     def browser(self):
         if self._browser is None or not self._browser.alive():
             self._browser = Browser(log=self.log, viewer=self.viewer, lean=self.low_mem)
+            self._browser.walls = self.walls
         return self._browser
 
     def close_browser(self):
@@ -233,13 +236,14 @@ class Tasks:
 
         def read(url, title_prefix=""):
             """Open url, return (title, url, key sentences) or None; walls and thin pages are skipped, never fought."""
-            if self._stopped() or self._over_budget() or url in have or FORUM.search(url):
+            if self._stopped() or self._over_budget() or url in have or FORUM.search(url) or self.walls.skip(url):
                 return None
             try:
                 b.open(url)
                 if b.status() != "ok":
-                    self.log("task_wall", url=url, wall=b.status()); return None
+                    self.log("task_wall", url=url, wall=b.status()); self.walls.hit(url, b.status()); return None
                 ks = key_sentences(b.extract_text(), topic)
+                self.walls.clear(url)
             except BrowserError:
                 return None
             if not ks:
@@ -339,7 +343,7 @@ class Tasks:
                         stopped = True
                     break
                 try:
-                    results = b.search_results(q, max(4, 12 // len(queries)))
+                    results = self.walls.order(b.search_results(q, max(4, 12 // len(queries))))   # sites that walled lately go last
                     nq_ok += 1
                 except BrowserError as e:
                     last_err = e
@@ -359,8 +363,9 @@ class Tasks:
                     dom = urllib.parse.urlparse(r["url"]).netloc.lower()
                     if dom and sum(1 for u in q_of if urllib.parse.urlparse(u).netloc.lower() == dom) >= 2:
                         continue                       # at most 2 pages per site (file:// pages have no site — never capped)
-                    if dom and walled.get(dom.removeprefix("www."), 0) >= 2:
-                        continue                       # this site walled twice already — the next site, not a third knock
+                    if dom and (walled.get(dom.removeprefix("www."), 0) >= 2 or self.walls.skip(r["url"])):
+                        self.log("wall_skipped", url=r["url"])
+                        continue                       # walled twice (this job or lately) — the next site, not a third knock
                     try:
                         b.open(r["url"])
                         st = b.status()
@@ -370,8 +375,11 @@ class Tasks:
                             self.log("task_wall", url=r["url"], wall=st)
                             if dom:
                                 walled[dom.removeprefix("www.")] = walled.get(dom.removeprefix("www."), 0) + 1
+                                self.walls.hit(r["url"], st)
                             continue
                         text = b.extract_text()
+                        if dom:
+                            self.walls.clear(r["url"])
                     except BrowserError:
                         continue
                     ks = key_sentences(text, topic)
@@ -552,10 +560,10 @@ class Tasks:
                     results = b.search_results(q, 10)
                 except BrowserError:
                     continue
-                for r in results:
+                for r in self.walls.order(results):
                     if self._stopped() or self._over_budget():
                         break
-                    if r["url"] in seen or FORUM.search(r["url"]) or len(rows) >= (n_pages if self._hurried() else n_pages * 2):
+                    if r["url"] in seen or FORUM.search(r["url"]) or len(rows) >= (n_pages if self._hurried() else n_pages * 2) or self.walls.skip(r["url"]):
                         continue
                     seen.add(r["url"])
                     try:
@@ -563,8 +571,10 @@ class Tasks:
                         if b.status() == "captcha":
                             self.pass_wall(b, r["url"])
                         if b.status() != "ok":
+                            self.log("task_wall", url=r["url"], wall=b.status()); self.walls.hit(r["url"], b.status())
                             continue
                         text = b.extract_text()
+                        self.walls.clear(r["url"])
                     except BrowserError:
                         continue
                     dom = urllib.parse.urlparse(r["url"]).netloc.replace("www.", "")

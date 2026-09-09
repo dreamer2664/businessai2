@@ -88,7 +88,7 @@ Forward me any customer message (or write /customer <their text>) → I draft th
 "rehearse posting about <topic>" — a dry run on my own practice network: log in, publish with photo, learn the limits, answer comments (nothing public) · /rehearse map — what I learned about each interface
 "build a website for <a place>" — I write the copy, build the pages, check them in my browser and send you the files · "start auto training on website building" — I practise on random real places from the map (watch it live) · "stop training"
 while I work: "status" / "what are you doing" · "why" · "hurry up" · "stop" · a change ("only Italy") · a new request (queued) — no need to wait
-/lessons — what I learned from my last jobs (I reflect after every one) · /thinking — what is on my mind right now · /disk [clean] — space on my machine
+/lessons — what I learned from my last jobs (I reflect after every one) · /thinking — what is on my mind right now · /disk [clean] — space on my machine · /walls [forget [site]] — sites that blocked me lately (I put them last)
 /ideas — business ideas I jotted from short videos (/ideas <topic> = go watch some now) · /study [topic] — find and keep a good PDF in my library
 /accounts — the site accounts I created with my own e-mail (I sign up when a task needs it and tell you in one line; never money sites) · /accounts allow <site>
 /library — the documents I've written (seller checks, research, comparisons); they also land in my Drive folder · /progress — today's log in Google Docs (every job writes there as it goes; long jobs get their own page) · /projects — the ideas I'm working on in free windows ('new project: …' adds one) · /mail — my inbox sorted into Verification / Leads / Alerts / Newsletters ('tidy the inbox' now, 'any leads?')
@@ -1059,6 +1059,13 @@ class Agent:
                 return (f"🧹 Cleaned {_hk.human(r['freed'])}: " + "; ".join(r["items"][:6]) + (f" … +{len(r['items']) - 6} more" if len(r["items"]) > 6 else "") if r["items"]
                         else "🧹 Nothing to clean — logs, screenshots and caches are all within their limits.") + "\n" + self.house.status_line()
             return self.house.text()
+        if low.startswith("/walls") or re.fullmatch(r"\W*(which|what) sites? (block|blocked|wall|walled) you\??\W*", low):
+            arg = text[6:].strip()
+            if arg.lower().startswith("forget"):
+                site = arg[6:].strip()
+                self.tasks.walls.forget(site or None)
+                return f"🧱 Forgot the walls for {site}." if site else "🧱 Forgot all remembered walls — every site gets a fresh chance."
+            return self.tasks.walls.text()
         if low.startswith("/ideas"):
             arg = text[6:].strip()
             if arg:
