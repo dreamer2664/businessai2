@@ -41,6 +41,7 @@ CONFIG = {
     "score_research": ([], 120, False),
     "score_youtube": ([], 120, False),
     "score_dropship": ([], 120, False),
+    "score_think": ([], 120, False),
     "score_sellers": ([], 300, True), "score_shopfacts": ([], 180, True),
     "score_sites": ([], 600, True), "score_stop": ([], 120, False),
     "score_store": ([], 180, False), "score_study": ([], 120, False),
