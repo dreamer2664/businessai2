@@ -29,8 +29,10 @@ from . import config
 
 CLIENT_FILE = config.ROOT / ".secrets" / "google_client.json"
 TOKEN_FILE = config.ROOT / ".secrets" / "google_token.json"
+PENDING_FILE = config.ROOT / ".secrets" / "google_pending.json"   # consent flow state: survives restarts
 SCOPES = ["https://www.googleapis.com/auth/drive.file",          # files the app created (its library folder)
-          "https://www.googleapis.com/auth/gmail.readonly"]      # read its own inbox for verification codes
+          "https://www.googleapis.com/auth/gmail.readonly",     # read its own inbox for verification codes
+          "https://www.googleapis.com/auth/gmail.send"]         # send mail as itself (fallback channel)
 LIBRARY_FOLDER = "Business AI library"
 UPLOAD = "https://www.googleapis.com/upload/drive/v3/files"
 DRIVE = "https://www.googleapis.com/drive/v3"
@@ -65,6 +67,16 @@ class Google:
                 self.token = json.loads(TOKEN_FILE.read_text())
         except Exception as e:
             self.last_error = f"could not read Google files: {e}"
+        try:
+            if PENDING_FILE.exists():
+                p = json.loads(PENDING_FILE.read_text())
+                if time.time() - p.get("t", 0) < 900 and p.get("state") and p.get("verifier"):
+                    self._pending = {"state": p["state"], "verifier": p["verifier"],
+                                     "redirect": p.get("redirect", ""), "server": None, "t": p["t"]}
+                else:
+                    PENDING_FILE.unlink()
+        except Exception:
+            pass
 
     def has_client(self):
         return bool(self.client and self.client.get("client_id") and self.client.get("client_secret"))
@@ -83,7 +95,7 @@ class Google:
             return "Google: key present, not connected yet — run `python3 -m agent.google connect` on my machine, or say 'connect google' and I send you the link."
         if self.needs_reconnect:
             return f"Google: connection expired (private apps are cut after 7 days) — say 'connect google' and I send you a new link. Last error: {self.last_error}"
-        return f"Google: connected as {self.account() or 'the app account'} · Drive folder “{LIBRARY_FOLDER}” · Gmail read-only"
+        return f"Google: connected as {self.account() or 'the app account'} · Drive folder “{LIBRARY_FOLDER}” · Gmail read + send"
 
     # ---- OAuth (desktop app, loopback redirect, PKCE) ---------------------------
     def connect_link(self, prefer_port=None):
@@ -103,6 +115,11 @@ class Google:
                   "code_challenge": challenge, "code_challenge_method": "S256"}
         url = self.client.get("auth_uri", "https://accounts.google.com/o/oauth2/auth") + "?" + urllib.parse.urlencode(params)
         self._pending = {"state": state, "verifier": verifier, "redirect": redirect, "server": srv, "t": time.time()}
+        try:
+            PENDING_FILE.write_text(json.dumps({k: self._pending[k] for k in ("state", "verifier", "redirect", "t")}))
+            PENDING_FILE.chmod(0o600)
+        except Exception:
+            pass
         threading.Thread(target=self._wait_code, daemon=True).start()
         self.log("google_connect_started", port=srv.port)
         return url
@@ -158,6 +175,10 @@ class Google:
                 self._pending["server"].close()
             except Exception:
                 pass
+        try:
+            PENDING_FILE.unlink(missing_ok=True)
+        except Exception:
+            pass
         self._pending = None
 
     def _exchange(self, code, verifier, redirect):
