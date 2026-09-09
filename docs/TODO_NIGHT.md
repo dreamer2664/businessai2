@@ -11,7 +11,7 @@ build on `night/marathon`, merge per item only when the full battery holds.
 
 ## List (weights = heartbeat %)
 - [x] 1. Fallback contact — Gmail two-way (poll owner mail, obey, reply) + scope upgrade to send — 12%
-- [ ] 2. Smarter research — query planner, multi-source, synthesis (no more literal-query copy-paste) — 14%
+- [x] 2. Smarter research — query planner, multi-source, synthesis (no more literal-query copy-paste) — 14%
 - [ ] 3. Marketplace scrapers — Vinted + subito.it deep, Facebook waters-only; stealth, back-off, proxy support — 20%
 - [ ] 4. YouTube trending + top comments (official API first, browser fallback) — 7%
 - [x] 5. Google Docs layouts (core writer live-verified; per-type templates ride with item 2) — native Docs API tables/styles per report type — 8%
@@ -28,3 +28,4 @@ build on `night/marathon`, merge per item only when the full battery holds.
 - 2026-09-09 02:4x UTC: item 1 DONE (agent/fallback.py, 14/14 offline, docs/FALLBACK.md, zero regressions) — merged to main. Item 5 core done (native writer 7/7 + live PASS). Heartbeat 26%. Next: item 10 (regression battery).
 - 2026-09-09 03:x UTC: item 10 DONE (score_all battery + suite hardening) — merged to main. Heartbeat 33%. Next: item 7 (time budgets).
 - 2026-09-09 03:x UTC: item 7 DONE (queue 20/20, battery green) — merged to main. Heartbeat 41%. Next: item 2 (smarter research).
+- 2026-09-09 0x:x UTC: item 2 DONE (research 19/19, battery green) — merged to main. Heartbeat 55%. Next: item 4 (YouTube).

@@ -150,6 +150,64 @@ class Tasks:
                 raise
 
     # ---- tasks ---------------------------------------------------------
+    @staticmethod
+    def _core_topic(topic):
+        t = re.sub(r"^(what is|what are|what was|how to|how do|how does|why|when|where|which|who|come|cosa|che cosa|perch[eé]|quando|dove|qual[ei])\b[\s,?]*", "", topic.strip(), flags=re.I).strip(" ?")
+        return t or topic.strip()
+
+    def plan_queries(self, topic, fast=False):
+        """2-3 varied search angles for one topic (item 2): base + intent aspects. 1 when hurried."""
+        base = self._core_topic(topic)
+        if fast:
+            return [base]
+        low = topic.strip().lower()
+        it = bool(re.search(r"\b(come|cosa|che|quale|quali|quanto|quando|dove|perch[eé]|una|uno|della|nella|sono|[eè]|ecco)\b", low)
+                    or re.search(r"\b(miglior|prezz|cost[oi]|confront|recension|guid[aeo]|spiegaz|esempi|iniziare|offert|scont|acquist)\w*\b", low))
+        orig = low
+        if re.match(r"(what|why|cosa|che cosa|perch)", orig):
+            aspects = ["explained", "examples"] if not it else ["spiegazione", "esempi"]
+        elif re.search(r"\b(buy|price|cheap|cost|deal|shop|order|prezzo|costo|acquist|offerta|sconto)\w*\b", low):
+            aspects = ["price", "review"] if not it else ["prezzo", "recensioni"]
+        elif re.search(r"\b(vs|versus|compare|comparison|best|better|confronta|confronto|miglior)\w*\b", low) or re.search(r"\btop \d", low):
+            aspects = ["vs", "best"] if not it else ["confronto", "migliore"]
+        elif re.search(r"\b(how|guide|tutorial|learn|start|explained|come|guida|iniziare)\w*\b", low):
+            aspects = ["guide", "tips"] if not it else ["guida", "consigli"]
+        else:
+            aspects = ["review", "guide"] if not it else ["recensioni", "guida"]
+        seen, qs = set(), []
+        for q in [base] + [f"{base} {x}" for x in aspects if not re.search(r"\b" + re.escape(x[:5]), base.lower())]:
+            if q.lower() not in seen:
+                seen.add(q.lower())
+                qs.append(q)
+        return qs
+
+    @staticmethod
+    def _synthesize(opened):
+        """Model-free synthesis (item 2): dedupe + cross-domain agreement. Returns lines or []."""
+        def norm(s):
+            return re.sub(r"\s+", " ", re.sub(r"[^\w ]", "", s.lower())).strip()
+
+        def dom(u):
+            return urllib.parse.urlparse(u).netloc.lower().removeprefix("www.")
+
+        if not opened:
+            return []
+        seen, agreed, rest = set(), [], []
+        for title, url, ks in opened:
+            for x in ks:
+                n = norm(x)
+                if not n or n in seen:
+                    continue
+                seen.add(n)
+                ds = {dom(url)} | {dom(u) for _, u, ks2 in opened if u != url for s2 in ks2 if norm(s2) == n}
+                (agreed if len(ds) >= 2 else rest).append((len(ds), x) if len(ds) >= 2 else x)
+        lines = [f"Across the {len(opened)} pages I read:"]
+        for nd, x in sorted(agreed, reverse=True)[:2]:
+            lines.append(f"✓ agreed by {nd} sources: {x}")
+        for x in sorted(rest, key=lambda v: (bool(re.search(r"\d", v)), len(v)), reverse=True)[:4]:
+            lines.append(f"• {x}")
+        return lines if (agreed or rest) else []
+
     def research(self, topic, n_pages=3, want_doc=False):
         t0 = time.time()
         report = [f"Research: {topic}"]
@@ -161,36 +219,56 @@ class Tasks:
                 report.append("From my knowledge pack:\n" + local)
         # 2) the web
         opened = []
+        q_of = {}
+        queries = self.plan_queries(topic, fast=self._hurried())
+        nq_ok, last_err = 0, None
         with self._session() as b:
-            try:
-                results = b.search_results(topic, 12)
-            except BrowserError as e:
-                return "\n".join(report + [f"(web search failed: {e})"])
             stopped = False; cut = False
-            for r in results:
-                if self._stopped() or self._over_budget():
-                    cut = self._over_budget() and not self._stopped()
-                    stopped = self._stopped()
+            for qi, q in enumerate(queries):
+                if self._stopped() or self._over_budget() or len(opened) >= n_pages:
+                    if self._over_budget() and not self._stopped():
+                        cut = True
+                    elif self._stopped():
+                        stopped = True
                     break
-                if self._hurried() and len(opened) >= max(1, n_pages - 1):
-                    break
-                if len(opened) >= n_pages or FORUM.search(r["url"]):
-                    continue
                 try:
-                    b.open(r["url"])
-                    st = b.status()
-                    if st == "captcha" and self.pass_wall(b, r["url"]):
-                        st = b.status()
-                    if st != "ok":
-                        self.log("task_wall", url=r["url"], wall=st); continue
-                    text = b.extract_text()
-                except BrowserError:
+                    results = b.search_results(q, max(4, 12 // len(queries)))
+                    nq_ok += 1
+                except BrowserError as e:
+                    last_err = e
                     continue
-                ks = key_sentences(text, topic)
-                if ks:
-                    opened.append((b.page.title()[:80] or r["url"], r["url"], ks))
-                    if want_doc:
-                        images[r["url"]] = self._page_image(b)
+                for r in results:
+                    if self._stopped() or self._over_budget():
+                        cut = self._over_budget() and not self._stopped()
+                        stopped = self._stopped()
+                        break
+                    if self._hurried() and len(opened) >= max(1, n_pages - 1):
+                        break
+                    if len(opened) >= n_pages:
+                        break
+                    if FORUM.search(r["url"]) or r["url"] in q_of:
+                        continue
+                    dom = urllib.parse.urlparse(r["url"]).netloc.lower()
+                    if sum(1 for u in q_of if urllib.parse.urlparse(u).netloc.lower() == dom) >= 2:
+                        continue
+                    try:
+                        b.open(r["url"])
+                        st = b.status()
+                        if st == "captcha" and self.pass_wall(b, r["url"]):
+                            st = b.status()
+                        if st != "ok":
+                            self.log("task_wall", url=r["url"], wall=st); continue
+                        text = b.extract_text()
+                    except BrowserError:
+                        continue
+                    ks = key_sentences(text, topic)
+                    if ks:
+                        opened.append((b.page.title()[:80] or r["url"], r["url"], ks))
+                        q_of[r["url"]] = qi
+                        if want_doc:
+                            images[r["url"]] = self._page_image(b)
+            if not opened and not nq_ok:
+                return "\n".join(report + [f"(web search failed: {last_err})"])
         # 3) what the owner added while I was reading ("also look at prices in germany") → one or two more pages on that
         change, extra = self.owner_change.strip(), []
         self.owner_change = ""
@@ -229,11 +307,14 @@ class Tasks:
         if brief:
             report = [f"Research: {topic}\n\n{brief}", "\nPages I read:"] + [f"[{i+1}] {t} — {u}" for i, (t, u, _) in enumerate(opened)]
         else:
+            synth = self._synthesize(opened)
+            if synth:
+                report.append("\n" + "\n".join(synth))
             for title, url, ks in opened:
                 report.append(f"\n{title}\n{url}\n" + "\n".join(f"• {s}" for s in ks))
         if change:
             report.append(f"You added “{change}” while I worked: " + (f"{len(extra)} page(s) on it are included" + (" (marked in the document)" if want_doc else "") if extra else "I searched for it but found nothing solid — say it again with other words if it matters") + ".")
-        report.append(f"({len(opened)} pages read in {time.time() - t0:.0f}s" + (" — stopped early as you asked" if stopped else (" — quiet-time budget ran out, I stopped here" if cut else "")) + ")")
+        report.append(f"({len(opened)} pages read in {time.time() - t0:.0f}s" + (f" · {len(queries)} search angles" if len(queries) > 1 else "") + (" — stopped early as you asked" if stopped else (" — quiet-time budget ran out, I stopped here" if cut else "")) + ")")
         out = "\n".join(report)
         if self.memory and opened:
             self.memory.note("research", topic, brief or out, [u for _, u, _ in opened])
