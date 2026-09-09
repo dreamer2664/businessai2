@@ -393,6 +393,7 @@ class Google:
             except Exception:
                 body = ""
             out.append({"id": m["id"], "thread": full.get("threadId", ""), "msgid": str(msg.get("Message-ID", "")),
+                        "auth": str(msg.get("Authentication-Results", "")),          # Gmail's SPF/DKIM verdict: spoofed From headers fail here
                         "labels": full.get("labelIds", []), "from": str(msg.get("From", "")), "subject": str(msg.get("Subject", "")),
                         "date": str(msg.get("Date", "")), "snippet": full.get("snippet", ""), "text": re.sub(r"\s+", " ", body).strip()[:4000]})
         return out

@@ -9,7 +9,7 @@ Two independent lines, both optional, both tested offline (engine/scripts/score_
    down") and for answering /status + quick questions, text-only, never buttons.
 
 Setup (with the owner, once): /fallback status · /fallback allow <email> ·
-/fallback forget <email> · /fallback test · /fallback test send
+/fallback forget <email> · /fallback test · /fallback test send · /fallback check on|off|now (daily morning "line alive" mail)
 Secrets (.secrets/env): OWNER_EMAILS=a@b.com,c@d.com · FALLBACK_BOT_TOKEN=123:ABC
 """
 import email.utils
@@ -27,6 +27,19 @@ MAX_BODY = 4000
 
 def _addr(from_header):
     return (email.utils.parseaddr(from_header or "")[1] or "").lower().strip()
+
+
+def authenticated(auth_header):
+    """Gmail's own SPF/DKIM verdict for an incoming mail. True when either passed; False when both failed;
+    None when the header is missing (local fakes, very old mail) — callers treat None as 'unknown'."""
+    a = (auth_header or "").lower()
+    if not a:
+        return None
+    if re.search(r"\b(dkim|spf)=pass\b", a):
+        return True
+    if re.search(r"\b(dkim|spf)=(fail|softfail|permerror|temperror|none)\b", a):
+        return False
+    return None
 
 
 def strip_quotes(text):
@@ -87,9 +100,10 @@ class Fallback:
             d = json.loads(STATE_FILE.read_text())
             return {"seen": d.get("seen", [])[-200:], "allowed": d.get("allowed", []),
                     "last_poll": d.get("last_poll", 0), "tg_down": d.get("tg_down", False),
-                    "tg_offset": d.get("tg_offset", 0)}
+                    "tg_offset": d.get("tg_offset", 0), "daily": d.get("daily", False),
+                    "last_check_day": d.get("last_check_day", "")}
         except Exception:
-            return {"seen": [], "allowed": [], "last_poll": 0, "tg_down": False, "tg_offset": 0}
+            return {"seen": [], "allowed": [], "last_poll": 0, "tg_down": False, "tg_offset": 0, "daily": False, "last_check_day": ""}
 
     def _save(self):
         try:
@@ -154,6 +168,9 @@ class Fallback:
                 continue                                            # own mail or own reply: never loop
             if sender not in self.owner_addresses():
                 self.log("fallback_stranger", sender=sender[:60], subject=subject[:60])
+                continue
+            if authenticated(m.get("auth")) is False:                       # From says the owner, Gmail says it did not come from there
+                self.log("fallback_spoofed", sender=sender[:60], subject=subject[:60])
                 continue
             text = strip_quotes(m.get("text") or "") or subject
             text = re.sub(r"\s+", " ", text).strip()[:MAX_BODY]
@@ -249,13 +266,41 @@ class Fallback:
                     pass
         return n
 
+    # ---- daily line check ------------------------------------------------
+    def line_check_due(self, hour, today):
+        """Once a day, in the morning (08–11), when the owner switched it on (/fallback check on)."""
+        return bool(self.state.get("daily")) and 8 <= hour < 11 and self.state.get("last_check_day") != today
+
+    def line_check(self, today, status_line=""):
+        """Send the daily 'line is alive' mail. Returns True when sent."""
+        addrs = sorted(self.owner_addresses())
+        if not (self.gmail_ready() and addrs):
+            return False
+        self.state["last_check_day"] = today
+        self._save()
+        try:
+            self.google.send_mail(addrs[0], f"{REPLY_PREFIX} morning line check {today}",
+                                  "\u2705 Both lines are alive: Telegram and this mailbox.\n"
+                                  + (status_line + "\n" if status_line else "")
+                                  + "\nReply to this mail with any request if Telegram ever stops answering.")
+            self.log("fallback_line_check", to=addrs[0][:60])
+            return True
+        except Exception as e:
+            self.log("fallback_send_failed", error=str(e)[:160])
+            return False
+
+    def set_daily(self, on):
+        self.state["daily"] = bool(on)
+        self._save()
+
     # ---- status ----------------------------------------------------------
     def status(self):
         g = "on" if self.gmail_ready() else ("waiting for Google" if not (self.google and self.google.connected()) else "needs /fallback allow <your email>")
         addrs = ", ".join(sorted(self.owner_addresses())) or "none yet"
         b = "on" if self.backup.configured() else "needs FALLBACK_BOT_TOKEN in .secrets/env"
         last = (time.strftime("%H:%M", time.localtime(self.state["last_poll"])) if self.state["last_poll"] else "never")
+        daily = ("on (08–11, last " + (self.state.get("last_check_day") or "never") + ")") if self.state.get("daily") else "off (/fallback check on)"
         return (f"📧 Fallback contact — Gmail: {g} · backup bot: {b}\n"
-                f"owner mail: {addrs} · last mail check: {last} · mails answered: {len(self.state['seen'])}\n"
+                f"owner mail: {addrs} · last mail check: {last} · mails answered: {len(self.state['seen'])} · morning line check: {daily}\n"
                 f"{'⚠️ main Telegram line currently DOWN' if self.state['tg_down'] else 'main Telegram line: ok'}\n"
-                f"/fallback allow <email> · /fallback forget <email> · /fallback test · /fallback test send")
+                f"/fallback allow <email> · /fallback forget <email> · /fallback test · /fallback test send · /fallback check on|off|now")

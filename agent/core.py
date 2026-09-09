@@ -105,6 +105,10 @@ class Agent:
         config.ensure_dirs()
         self.bot = Bot()
         self.me = self.bot.get_me()
+        try:
+            self._wrap_bot_for_capture()
+        except Exception:
+            pass
         self.owner_id = config.TELEGRAM_OWNER_ID
         self.owner_name = config.TELEGRAM_OWNER_USERNAME
         self.state_file = config.STATE_DIR / "agent.json"
@@ -665,8 +669,63 @@ class Agent:
                 pass
 
     def _fallback_respond(self, text):
-        """Owner mail goes through the normal responder; approvals still tap on Telegram."""
-        return self.respond(text)
+        """Owner mail goes through the normal responder. Everything the answer pushes to the phone meanwhile (plans,
+        button questions, document names) is captured on this thread and goes into the mail too — so the reply is
+        complete even when Telegram is the thing that is down."""
+        cap = self._capture_start()
+        try:
+            out = self.respond(text)
+        finally:
+            extra = self._capture_stop(cap)
+        parts = [x for x in ([out] if isinstance(out, str) and out.strip() else []) + extra if x]
+        if not parts:
+            return None
+        return "\n\n".join(parts) + ("\n\n(Buttons only work on Telegram — by mail, answer with the option's words: e.g. \"go\", \"approve\", \"cancel\".)"
+                                    if any("▶" in x or "Apply" in x or "Approve" in x for x in extra) else "")
+
+    # ---- capturing what goes to the phone (for the mail line) ----------
+    def _capture_start(self):
+        import threading as _th
+        if not hasattr(self, "_tl"):
+            self._tl = _th.local()
+        self._tl.capture = []
+        return self._tl.capture
+
+    def _capture_stop(self, cap):
+        try:
+            self._tl.capture = None
+        except Exception:
+            pass
+        return list(cap or [])
+
+    def _wrap_bot_for_capture(self):
+        """Wrap bot.send / send_document once: still sends to Telegram, also records the text when this thread captures."""
+        bot = self.bot
+        if getattr(self, "_capture_wrapped", None) is bot:          # keyed on the agent, not on the bot object (test doubles answer any attribute)
+            return
+        self._capture_wrapped = bot
+        real_send = bot.send
+        try:
+            real_doc = bot.send_document
+        except AttributeError:
+            real_doc = None
+        agent = self
+
+        def send(chat_id, text, buttons=None, **k):
+            cap = getattr(getattr(agent, "_tl", None), "capture", None)
+            if cap is not None:
+                cap.append(str(text) + (("\n[" + " · ".join(lab for row in buttons for lab, _ in row) + "]") if buttons else ""))
+            return real_send(chat_id, text, buttons=buttons, **k)
+
+        def send_document(chat_id, path, caption="", **k):
+            cap = getattr(getattr(agent, "_tl", None), "capture", None)
+            if cap is not None:
+                cap.append(f"[document: {os.path.basename(str(path))}] {caption}".strip())
+            return real_doc(chat_id, path, caption=caption, **k) if real_doc else None
+
+        bot.send = send
+        if real_doc:
+            bot.send_document = send_document
 
     def backup_reply(self, text):
         """Text-only answers for the backup bot: /status + quick talk, never buttons."""
@@ -848,7 +907,17 @@ class Agent:
                     return "\U0001F4E7 " + self.fallback.status()
                 threading.Thread(target=self.poll_fallback, daemon=True).start()
                 return "\U0001F4E7 Checking mail now \u2014 I'll answer here if I find anything."
-            return "\U0001F4E7 " + self.fallback.status()
+            if sub == "check":
+                if rest.lower() in ("on", "yes", "si", "sì"):
+                    self.fallback.set_daily(True)
+                    return "\U0001F4E7 Morning line check on: one short mail between 08:00 and 11:00 every day, proving both lines work."
+                if rest.lower() in ("off", "no"):
+                    self.fallback.set_daily(False)
+                    return "\U0001F4E7 Morning line check off."
+                if rest.lower() == "now":
+                    ok = self.fallback.line_check(_dt.date.today().isoformat(), self.status_text().splitlines()[1] if self.owner_id else "")
+                    return "\U0001F4E7 Line-check mail sent." if ok else "Could not send it. " + self.fallback.status()
+            return self.fallback.status()
         if low.startswith("/queue"):
             parts = text[6:].strip().split()
             if not parts:
@@ -2196,6 +2265,9 @@ class Agent:
             return
         self.last_idle_check = now
         self.google_check()
+        if self.fallback.line_check_due(_dt.datetime.now().hour, _dt.date.today().isoformat()):
+            threading.Thread(target=lambda: self.fallback.line_check(_dt.date.today().isoformat(),
+                             self.status_text().splitlines()[1]), daemon=True).start()
         if self.fallback.due():
             threading.Thread(target=self.poll_fallback, daemon=True).start()
             return
