@@ -165,7 +165,7 @@ A.handle_update = lambda u: order.append("handle")
 A.state["offset"] = 0
 A._dispatch({"update_id": 5})
 A._save_state, A.handle_update = _real_save, _real_handle
-check("dispatch: handled BEFORE the offset advances (a death redelivers, never loses)", order == ["handle", "save"] and A.state["offset"] == 6, str(order))
+check("dispatch: attempt counted, handled, THEN the offset advances (a death redelivers, never loses)", order == ["save", "handle", "save"] and A.state["offset"] == 6, str(order))
 def _boom(u):
     raise RuntimeError("poison")
 A.handle_update = _boom
@@ -183,6 +183,106 @@ try:
 except OSError:
     pass
 check("single instance: second holder refused, first released", r1 == 0 and r2 == 1, f"{r1} {r2}")
+# ---- loop armor: the poll loop can neither crash nor wedge silently (silence hardening) ----
+import json as _json                                                              # noqa: E402
+_logfile = pathlib.Path(os.environ["BAI_STATE"], "logs", time.strftime("%Y-%m-%d") + ".jsonl")
+A.last_quiet = time.time()                              # keep idle_work from starting background sessions in the loop tests
+A.state["offset"] = 100
+_status_seen = []
+_real_send = A.bot.send
+def _spy_send(chat_id, text, buttons=None, **k):
+    _status_seen.append(text)
+    return _real_send(chat_id, text, buttons, **k)
+A.bot.send = _spy_send
+_calls = {"n": 0}
+def _fake_updates(offset=None, timeout=15):
+    _calls["n"] += 1
+    if _calls["n"] == 1:
+        return [{"update_id": 100, "message": {"message_id": 1, "chat": {"id": 1}, "from": {"id": 1, "username": "owner"}, "text": "/status"}}]
+    return []
+A.bot.get_updates = _fake_updates
+_real_ticks = (A.tasks.tick, A.planner.tick, A.eyes.tick, A.clock_tick)
+def _boom_tick():
+    raise RuntimeError("tick explosion")
+A.tasks.tick = A.planner.tick = A.eyes.tick = A.clock_tick = _boom_tick
+A.run(once=True)
+A.tasks.tick, A.planner.tick, A.eyes.tick, A.clock_tick = _real_ticks
+A.bot.send = _real_send
+check("loop armor: every tick exploding, /status is still answered and the offset advances",
+      any("practice store" in t for t in _status_seen) and A.state["offset"] == 101, str(_status_seen)[:100])
+check("loop armor: the exploded ticks were logged loudly (tick_failed), not swallowed",
+      _logfile.read_text().count("tick_failed") >= 4)
+_calls2 = {"n": 0}
+def _garbage_then_empty(offset=None, timeout=15):
+    _calls2["n"] += 1
+    if _calls2["n"] == 1:
+        raise ValueError("No JSON object could be decoded")
+    return []
+A.bot.get_updates = _garbage_then_empty
+A.run(once=True)                                                     # must return, not raise
+check("loop armor: garbage from Telegram (ValueError) is ridden out, then polling resumes",
+      _calls2["n"] == 2 and "poll_failed" in _logfile.read_text())
+_real_inbox_status, _real_brain_describe = A.inbox.status, A.brain.describe
+def _boom0(*a, **k):
+    raise ZeroDivisionError("wedged part")
+A.inbox.status, A.brain.describe = _boom0, _boom0
+_armored = A.status_text()
+A.inbox.status, A.brain.describe = _real_inbox_status, _real_brain_describe
+check("status armor: exploding parts degrade their own line, /status still answers",
+      "(inbox: unavailable)" in _armored and "(uptime: unavailable)" in _armored and "practice store" in _armored)
+_real_note = A.viewer.note
+A.viewer.note = lambda kind, fields: 1 / 0
+try:
+    A.log("armor_probe")
+    _log_ok = True
+except Exception:
+    _log_ok = False
+A.viewer.note = _real_note
+check("log armor: an exploding viewer.note cannot kill the logger", _log_ok)
+from agent.telegram import Bot as RealBot, TelegramError       # noqa: E402
+import urllib.request as _urlreq                                        # noqa: E402
+_real_urlopen = _urlreq.urlopen
+class _GarbageResp:
+    def __enter__(self):
+        return self
+    def __exit__(self, *a):
+        return False
+    def read(self, *a):
+        return b"<html>proxy says hi</html>"
+_urlreq.urlopen = lambda req, timeout=None: _GarbageResp()
+try:
+    RealBot(token="000:fake").call("getUpdates", _retries=1)
+    _tg_ok = False
+except TelegramError:
+    _tg_ok = True
+except Exception:
+    _tg_ok = False
+finally:
+    _urlreq.urlopen = _real_urlopen
+check("net armor: an unreadable Telegram reply becomes TelegramError (handled), never a crash", _tg_ok)
+_boom_calls = {"n": 0}
+def _boom_count(u):
+    _boom_calls["n"] += 1
+    raise RuntimeError("poison")
+A.handle_update = _boom_count
+A.state["attempts"] = {"200": 2}          # two earlier deaths mid-handling (each counted before handling)
+A._dispatch({"update_id": 200})           # 3rd attempt: still tried
+A.state["attempts"] = {"201": 3}          # three earlier deaths: give up loudly
+A._dispatch({"update_id": 201})           # skipped, never handled again
+A.handle_update = _real_handle
+check("attempt cap: the 3rd try is still handled, after 3 deaths the update is skipped loudly (no hang loop)",
+      _boom_calls["n"] == 1 and A.state["offset"] == 202 and "poison_skip" in _logfile.read_text()
+      and A.state.get("attempts") == {})
+A._progress = time.time() - 10
+_fresh = not A._watchdog_fired()
+A._progress = time.time() - 1000
+_stale = A._watchdog_fired()
+A._progress = time.time()
+check("watchdog: fresh progress is fine, 1000 s without progress fires", _fresh and _stale)
+A._save_state()
+_aj = pathlib.Path(os.environ["BAI_STATE"], "agent.json")
+check("atomic state: agent.json always valid JSON, no tmp left behind",
+      _json.loads(_aj.read_text())["offset"] == A.state["offset"] and not list(pathlib.Path(os.environ["BAI_STATE"]).glob("*.tmp")))
 ok = sum(1 for _, v in checks if v)
 print(f"PHONE SCORE: {ok}/{len(checks)}  ({time.time() - t0:.0f} s)", flush=True)
 os._exit(0 if ok == len(checks) else 1)

@@ -70,8 +70,9 @@
   ]
  ],
  "latest": [
-  "QA pass: file:// gate fix, Gmail thread-rejection retry, inbox rash escalation (23/23).",
-  "Docs completed: all suites in SCORES.md (20 rows), battery 20/20 fast, 0 FAIL.",
-  "MARATHON COMPLETE \u2014 all 10 items shipped. Remaining: owner setup (Google token on PC, fallback secrets)."
- ]
+  "Silence hardening shipped: loop armor + 180 s watchdog + attempt cap + status/log armor (phone 35/35).",
+  "Battery 20 suites exit 0 (17 PASS, talk PARTIAL env-only, 2 SKIP env).",
+  "PC needs: git pull + restart \u2014 then /status must answer; if not, alive.json + watchdog_restart in the log name the cause."
+ ],
+ "updated": "2026-09-09T12:44:55+00:00"
 }

@@ -141,7 +141,11 @@ class Viewer:
     def note(self, kind, fields):
         if kind in ("poll_error",):
             return
-        self.events.appendleft({"t": _dt.datetime.now().strftime("%H:%M:%S"), "text": humanize(kind, fields)})
+        try:
+            text = humanize(kind, fields)
+        except Exception:
+            text = f"{kind} (unrenderable)"
+        self.events.appendleft({"t": _dt.datetime.now().strftime("%H:%M:%S"), "text": text})
         if self.listener:
             try:
                 self.listener(kind, fields)

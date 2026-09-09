@@ -188,22 +188,44 @@ class Agent:
             return {"offset": 0}
 
     def _save_state(self):
-        self.state_file.write_text(json.dumps(self.state))
+        # atomic: a death mid-write must never leave a truncated agent.json behind. Never raises.
+        try:
+            tmp = self.state_file.with_suffix(".tmp")
+            tmp.write_text(json.dumps(self.state))
+            os.replace(tmp, self.state_file)
+        except Exception:
+            try:
+                self.state_file.write_text(json.dumps(self.state))
+            except Exception:
+                pass
 
     def log(self, *args, **fields):
-        """log("event", field=…). A field literally named 'kind' is kept as 'kind_' so no caller can crash the logger."""
-        kind = args[0] if args else fields.pop("event", "event")
-        if "kind" in fields:
-            fields["kind_"] = fields.pop("kind")
-        rec = {"t": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"), "kind": kind}
-        rec.update(fields)
-        line = config.redact(json.dumps(rec, ensure_ascii=False))
-        if hasattr(self, "viewer"):
-            self.viewer.note(kind, fields)
-        day = _dt.date.today().isoformat()
-        with open(config.LOG_DIR / f"{day}.jsonl", "a") as f:
-            f.write(line + "\n")
-        print(line, flush=True)
+        """log("event", field=…). Never raises: a dead logger must never kill the loop it observes."""
+        try:
+            kind = args[0] if args else fields.pop("event", "event")
+            if "kind" in fields:
+                fields["kind_"] = fields.pop("kind")
+            rec = {"t": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"), "kind": kind}
+            rec.update(fields)
+            line = config.redact(json.dumps(rec, ensure_ascii=False))
+        except Exception:
+            kind, line = (args[0] if args else "event"), None
+        if line is not None and hasattr(self, "viewer"):
+            try:
+                self.viewer.note(kind, fields)
+            except Exception:
+                pass
+        if line is not None:
+            try:
+                day = _dt.date.today().isoformat()
+                with open(config.LOG_DIR / f"{day}.jsonl", "a") as f:
+                    f.write(line + "\n")
+            except Exception:
+                pass
+        try:
+            print(line if line is not None else '{"kind": "log_failed"}', flush=True)
+        except Exception:
+            pass
 
     # ---- owner check ---------------------------------------------------
     def is_owner(self, user):
@@ -2397,23 +2419,32 @@ class Agent:
             self.google_reconnect_told = time.time()
             self.notify("🔑 Google cut my Drive/Gmail connection (it does that every 7 days for private apps). " + self.google_command("connect"))
 
+    def _safe(self, fn, name):
+        """One status line that can never kill /status: on failure the line says so and the rest still answers."""
+        try:
+            return fn()
+        except Exception as e:
+            self.log("status_part_failed", part=name, error=str(e)[:120])
+            return f"({name}: unavailable)"
+
     def status_text(self):
         up = int(time.time() - self.started)
+        s = self._safe
         return (f"Business AI {VERSION}\n"
-                f"up {up // 3600}h {up % 3600 // 60}m · brain: {self.brain.describe()}\n"
-                f"{self.planner.describe()} · notes: {len(self.memory.notes(limit=100000))} · {self.memory.list_text().splitlines()[-1]}\n"
-                f"{self.learner.status()}\n"
-                f"{self.inbox.status()} · {self.shopfacts.describe()}\n{self.social.status()}\n"
-                f"practice store: {'open at ' + self.store_url() + ' · day ' + str(self.store.data['day']) + ' · ' + str(len(self.store.data['orders'])) + ' orders' if self.store.server else 'closed (/store open)'}\n"
-                f"channels: {', '.join(c.describe().split(' (')[0] for c in self.channels.active()) or 'none connected (/channels)'}\n"
-                f"{self.eyes.describe_status()} · {self.desktop.describe_status()}\n"
-                f"{self.google.status()} · {self.accounts.id.describe()} · {len(self.accounts.data['accounts'])} site account(s)\n"
-                f"fallback: {self.fallback.status().splitlines()[0][2:]}\n"
-                f"{self.pace.text()}" + (f" · plan: {self.active_brief['goal'][:60]} (step {self.viewer.plan['step'] + 1 if self.viewer.plan else '?'}/{len(self.active_brief['steps'])})" if self.active_brief else "") + "\n"
-                f"thinking: {self.mind.stats_text()}" + (f" · security checks: {self.tasks.captcha_stats['passed']} passed by myself, {self.tasks.captcha_stats['skipped']} skipped, {self.tasks.captcha_stats['owner']} handed to you" if self.tasks.captcha_stats["tried"] else "") + "\n"
-                f"owner: {'pinned' if self.owner_id else 'not yet seen'} · "
-                f"pending questions: {len(self.pending)} · busy: {self.busy or 'no'}\n"
-                f"live screen: {self.viewer.address()} (on the machine I run on) · watch: {'on' if self.watch else 'off'}")
+                + s(lambda: f"up {up // 3600}h {up % 3600 // 60}m · brain: {self.brain.describe()}", "uptime") + "\n"
+                + s(lambda: f"{self.planner.describe()} · notes: {len(self.memory.notes(limit=100000))} · {self.memory.list_text().splitlines()[-1]}", "thinking") + "\n"
+                + s(self.learner.status, "learned") + "\n"
+                + s(lambda: f"{self.inbox.status()} · {self.shopfacts.describe()}", "inbox") + "\n"
+                + s(self.social.status, "social") + "\n"
+                + s(lambda: f"practice store: {'open at ' + self.store_url() + ' · day ' + str(self.store.data['day']) + ' · ' + str(len(self.store.data['orders'])) + ' orders' if self.store.server else 'closed (/store open)'}", "store") + "\n"
+                + s(lambda: f"channels: {', '.join(c.describe().split(' (')[0] for c in self.channels.active()) or 'none connected (/channels)'}", "channels") + "\n"
+                + s(lambda: f"{self.eyes.describe_status()} · {self.desktop.describe_status()}", "eyes") + "\n"
+                + s(lambda: f"{self.google.status()} · {self.accounts.id.describe()} · {len(self.accounts.data['accounts'])} site account(s)", "google") + "\n"
+                + s(lambda: f"fallback: {self.fallback.status().splitlines()[0][2:]}", "fallback") + "\n"
+                + s(lambda: f"{self.pace.text()}" + (f" · plan: {self.active_brief['goal'][:60]} (step {self.viewer.plan['step'] + 1 if self.viewer.plan else '?'}/{len(self.active_brief['steps'])})" if self.active_brief else ""), "pace") + "\n"
+                + s(lambda: f"thinking: {self.mind.stats_text()}" + (f" · security checks: {self.tasks.captcha_stats['passed']} passed by myself, {self.tasks.captcha_stats['skipped']} skipped, {self.tasks.captcha_stats['owner']} handed to you" if self.tasks.captcha_stats["tried"] else ""), "mind") + "\n"
+                + s(lambda: f"owner: {'pinned' if self.owner_id else 'not yet seen'} · pending questions: {len(self.pending)} · busy: {self.busy or 'no'}", "owner") + "\n"
+                + s(lambda: f"live screen: {self.viewer.address()} (on the machine I run on) · watch: {'on' if self.watch else 'off'}", "screen"))
 
     def selftest(self):
         a = self.ask("Self-test (the buttons mean nothing, just checking that your tap reaches me): tap one",
@@ -2425,13 +2456,57 @@ class Agent:
     def _dispatch(self, u):
         """Handle one update, THEN advance the saved offset: a death mid-handling redelivers
         the message on restart instead of losing it (at-least-once). Handler errors are
-        contained as before, so a poison message still advances and never loops."""
-        try:
-            self.handle_update(u)
-        except Exception:
-            self.log("handler_error", trace=traceback.format_exc()[-800:])
-        self.state["offset"] = u["update_id"] + 1
+        contained as before, so a poison message still advances and never loops.
+        Attempts are counted BEFORE handling: an update that killed us 3 times is skipped
+        loudly instead of hanging every restart forever."""
+        uid = u.get("update_id")
+        if uid is None:
+            self.log("dispatch_no_id")
+            return
+        att = self.state.setdefault("attempts", {})
+        n = att.get(str(uid), 0)
+        if n >= 3:
+            self.log("poison_skip", update_id=uid, attempts=n)
+        else:
+            att[str(uid)] = n + 1
+            self._save_state()
+            try:
+                self.handle_update(u)
+            except Exception:
+                self.log("handler_error", trace=traceback.format_exc()[-800:])
+        self.state["offset"] = uid + 1
+        att.pop(str(uid), None)
+        if len(att) > 100:
+            self.state["attempts"] = {}
         self._save_state()
+
+    WATCHDOG_LIMIT = 180      # no loop progress for this long → the loop is wedged: exit loud, systemd restarts us
+    NETFAIL_ALERT = 12        # consecutive dead polls before the fallback channel cries for help
+
+    def _watchdog_fired(self, now=None):
+        return (now or time.time()) - getattr(self, "_progress", time.time()) > self.WATCHDOG_LIMIT
+
+    def _watchdog(self):
+        while True:
+            time.sleep(30)
+            if self._watchdog_fired():
+                try:
+                    self.log("watchdog_restart", stuck_s=int(time.time() - self._progress))
+                    sys.stdout.flush()
+                except Exception:
+                    pass
+                print("WATCHDOG: no loop progress — exiting so systemd restarts me.", flush=True)
+                os._exit(1)
+
+    def _heartbeat(self):
+        # state/alive.json: proof of polling, readable from disk without touching Telegram
+        try:
+            (config.STATE_DIR / "alive.json").write_text(json.dumps({
+                "t": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
+                "pid": os.getpid(), "offset": self.state.get("offset", 0),
+                "up_s": int(time.time() - self.started)}))
+        except Exception:
+            pass
 
     def run(self, once=False):
         lock = _take_lock(config.STATE_DIR / "agent.lock")
@@ -2439,14 +2514,22 @@ class Agent:
             self.log("second_instance_refused")
             print("another instance is already running (agent.lock held) — refusing to start.")
             sys.exit(LOCK_EXIT)
+        self._progress = time.time()
+        self._netfails = 0
+        self._last_alive = 0
+        if not once:
+            threading.Thread(target=self._watchdog, daemon=True).start()
         backoff = 2
         while True:
             try:
-                updates = self.bot.get_updates(offset=self.state.get("offset", 0) or None, timeout=15)
+                updates = self.bot.get_updates(offset=self.state.get("offset", 0) or None, timeout=15) or []
                 backoff = 2
                 if getattr(self, "_tg_auth_fails", 0) >= 5:
                     threading.Thread(target=self.fallback.telegram_back, daemon=True).start()
                 self._tg_auth_fails = 0
+                if self._netfails >= self.NETFAIL_ALERT:
+                    threading.Thread(target=self.fallback.telegram_back, daemon=True).start()
+                self._netfails = 0
             except TelegramError as e:
                 self.log("poll_error", error=str(e))
                 if "401" in str(e) or "nauthorized" in str(e):
@@ -2454,20 +2537,46 @@ class Agent:
                     if self._tg_auth_fails == 5:
                         threading.Thread(target=self.fallback.telegram_down,
                                          args=(str(e)[:120],), daemon=True).start()
+                if "409" not in str(e) and "Conflict" not in str(e):
+                    self._netfails += 1
+                    if self._netfails == self.NETFAIL_ALERT:
+                        threading.Thread(target=self.fallback.telegram_down,
+                                         args=(f"cannot reach Telegram ({str(e)[:100]})",), daemon=True).start()
                 if "timed out" not in str(e):
                     time.sleep(backoff)
                     backoff = min(backoff * 2, 30)
                 continue
-            self.tasks.tick()
-            self.planner.tick()
-            self.eyes.tick()
-            self.clock_tick()
-            if time.time() - getattr(self, "_last_remind", 0) > 60 and self.owner_id:
-                self._last_remind = time.time()
-                self.reminders_due()
-            self.idle_work()
+            except Exception as e:
+                # json garbage, DNS weirdness, anything: back off, never die
+                self.log("poll_failed", error=repr(e)[:160])
+                time.sleep(backoff)
+                backoff = min(backoff * 2, 30)
+                continue
+            for _name, _fn in (("tasks", self.tasks.tick), ("planner", self.planner.tick),
+                               ("eyes", self.eyes.tick), ("clock", self.clock_tick)):
+                try:
+                    _fn()
+                except Exception as e:
+                    self.log("tick_failed", tick=_name, error=repr(e)[:160])
+            try:
+                if time.time() - getattr(self, "_last_remind", 0) > 60 and self.owner_id:
+                    self._last_remind = time.time()
+                    self.reminders_due()
+            except Exception as e:
+                self.log("tick_failed", tick="reminders", error=repr(e)[:160])
+            try:
+                self.idle_work()
+            except Exception as e:
+                self.log("tick_failed", tick="idle", error=repr(e)[:160])
             for u in updates:
                 self._dispatch(u)
+            self._progress = time.time()
+            if time.time() - self._last_alive > 3600:
+                self._last_alive = time.time()
+                self.log("alive", up_h=int(time.time() - self.started) // 3600,
+                         offset=self.state.get("offset", 0))
+            else:
+                self._heartbeat()
             if once and not updates:
                 return
 
