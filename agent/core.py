@@ -37,6 +37,7 @@ from .operator import Operator
 from .telegram import Bot, TelegramError
 from .store import money
 from .google import Google, GoogleError
+from .fallback import Fallback
 from . import library
 from .brief import Brief
 from .pace import Pace
@@ -129,6 +130,9 @@ class Agent:
         self.channels = Channels(inbox=self.inbox, log=self.log)
         self.google = Google(log=self.log)
         self.google_reconnect_told = 0
+        self.fallback = Fallback(google=self.google, log=self.log)
+        self.fallback.owner_id_fn = lambda: self.owner_id or 0
+        self._tg_auth_fails = 0
         self.briefer = Brief(planner=self.planner, log=self.log)
         self.accounts = Accounts(google=self.google, log=self.log, notify=self.notify, ask=self.ask)
         self.accounts.eyes = self.eyes
@@ -620,6 +624,43 @@ class Agent:
             self.notify("📥 Checked: no new customer messages.")
         return len(new)
 
+    def poll_fallback(self):
+        """Answer owner mail + backup-bot messages (the fallback channel)."""
+        try:
+            handled = self.fallback.poll(self._fallback_respond)
+        except Exception as e:
+            self.log("fallback_error", error=str(e)[:200])
+            handled = []
+        try:
+            self.fallback.poll_backup(self.backup_reply)
+        except Exception as e:
+            self.log("fallback_error", error=str(e)[:200])
+        if handled and self.owner_id:
+            try:
+                self.notify(f"\U0001F4E7 Answered {len(handled)} mail{'s' if len(handled) > 1 else ''} by email.")
+            except Exception:
+                pass
+
+    def _fallback_respond(self, text):
+        """Owner mail goes through the normal responder; approvals still tap on Telegram."""
+        return self.respond(text)
+
+    def backup_reply(self, text):
+        """Text-only answers for the backup bot: /status + quick talk, never buttons."""
+        low = text.strip().lower()
+        if low.startswith("/status") or low in ("status", "ciao", "hello", "hi"):
+            try:
+                return self.status_text()
+            except Exception:
+                return "I'm alive (backup bot)."
+        try:
+            out = self.talk.reply(text)
+        except Exception:
+            return "I'm alive (backup bot) \u2014 open the main bot for the rest."
+        if isinstance(out, str) and out and len(out) < 1500:
+            return out
+        return "Got it \u2014 for that one, open the main bot."
+
     def process_inbox(self):
         """Draft a reply for every new message and put each in front of the owner with buttons."""
         if self.busy:
@@ -759,6 +800,28 @@ class Agent:
                 return f"What should the {plat} post be about?"
             threading.Thread(target=self.draft_post, args=(plat, topic), daemon=True).start()
             return f"Drafting a {plat} post about “{topic}” — you'll get it with Approve / Edit / Reject buttons. Nothing gets published by itself."
+        if low.startswith("/fallback"):
+            arg = text[9:].strip()
+            parts = arg.split(None, 1)
+            sub = (parts[0].lower() if parts else "")
+            rest = (parts[1].strip() if len(parts) > 1 else "")
+            if sub == "allow" and rest:
+                ok = self.fallback.allow(rest)
+                return f"\U0001F4E7 {ok} added \u2014 mail from there reaches me." if ok else "\U0001F4E7 That doesn't look like an email address."
+            if sub == "forget" and rest:
+                return "\U0001F4E7 Removed." if self.fallback.forget(rest) else "\U0001F4E7 That address wasn't on my list."
+            if sub == "test" and rest == "send":
+                addrs = sorted(self.fallback.owner_addresses())
+                if self.google.connected() and addrs:
+                    self.google.send_mail(addrs[0], "Re: [BusinessAI] test", "\u2705 Fallback mail works \u2014 I can reach you here.")
+                    return f"\U0001F4E7 Test mail sent to {addrs[0]}."
+                return "\U0001F4E7 " + self.fallback.status()
+            if sub == "test":
+                if not self.fallback.gmail_ready():
+                    return "\U0001F4E7 " + self.fallback.status()
+                threading.Thread(target=self.poll_fallback, daemon=True).start()
+                return "\U0001F4E7 Checking mail now \u2014 I'll answer here if I find anything."
+            return "\U0001F4E7 " + self.fallback.status()
         if low.startswith("/channels"):
             arg = low[9:].strip()
             if arg == "check":
@@ -2083,6 +2146,9 @@ class Agent:
             return
         self.last_idle_check = now
         self.google_check()
+        if self.fallback.due():
+            threading.Thread(target=self.poll_fallback, daemon=True).start()
+            return
         if self.channels.due():
             threading.Thread(target=self.poll_channels, daemon=True).start()
             return
@@ -2310,6 +2376,7 @@ class Agent:
                 f"channels: {', '.join(c.describe().split(' (')[0] for c in self.channels.active()) or 'none connected (/channels)'}\n"
                 f"{self.eyes.describe_status()} · {self.desktop.describe_status()}\n"
                 f"{self.google.status()} · {self.accounts.id.describe()} · {len(self.accounts.data['accounts'])} site account(s)\n"
+                f"fallback: {self.fallback.status().splitlines()[0][2:]}\n"
                 f"{self.pace.text()}" + (f" · plan: {self.active_brief['goal'][:60]} (step {self.viewer.plan['step'] + 1 if self.viewer.plan else '?'}/{len(self.active_brief['steps'])})" if self.active_brief else "") + "\n"
                 f"thinking: {self.mind.stats_text()}" + (f" · security checks: {self.tasks.captcha_stats['passed']} passed by myself, {self.tasks.captcha_stats['skipped']} skipped, {self.tasks.captcha_stats['owner']} handed to you" if self.tasks.captcha_stats["tried"] else "") + "\n"
                 f"owner: {'pinned' if self.owner_id else 'not yet seen'} · "
@@ -2329,8 +2396,16 @@ class Agent:
             try:
                 updates = self.bot.get_updates(offset=self.state.get("offset", 0) or None, timeout=15)
                 backoff = 2
+                if getattr(self, "_tg_auth_fails", 0) >= 5:
+                    threading.Thread(target=self.fallback.telegram_back, daemon=True).start()
+                self._tg_auth_fails = 0
             except TelegramError as e:
                 self.log("poll_error", error=str(e))
+                if "401" in str(e) or "nauthorized" in str(e):
+                    self._tg_auth_fails = getattr(self, "_tg_auth_fails", 0) + 1
+                    if self._tg_auth_fails == 5:
+                        threading.Thread(target=self.fallback.telegram_down,
+                                         args=(str(e)[:120],), daemon=True).start()
                 if "timed out" not in str(e):
                     time.sleep(backoff)
                     backoff = min(backoff * 2, 30)
