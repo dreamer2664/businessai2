@@ -14,6 +14,7 @@ import email
 import email.policy
 import http.server
 import json
+import pathlib
 import mimetypes
 import os
 import re
@@ -29,7 +30,9 @@ from . import config
 
 CLIENT_FILE = config.ROOT / ".secrets" / "google_client.json"
 TOKEN_FILE = config.ROOT / ".secrets" / "google_token.json"
+TOKEN_BACKUP = pathlib.Path.home() / ".bai_google_token.json"
 PENDING_FILE = config.ROOT / ".secrets" / "google_pending.json"   # consent flow state: survives restarts
+PENDING_BACKUP = pathlib.Path.home() / ".bai_google_pending.json"       # second copy outside the repo folder (sandbox resets wipe the repo's ignored files first)
 SCOPES = ["https://www.googleapis.com/auth/drive.file",          # files the app created (its library folder)
           "https://www.googleapis.com/auth/gmail.readonly",     # read its own inbox for verification codes
           "https://www.googleapis.com/auth/gmail.send",        # send mail as itself (fallback channel)
@@ -66,16 +69,20 @@ class Google:
                 self.client = d.get("installed") or d.get("web") or {}
             if TOKEN_FILE.exists():
                 self.token = json.loads(TOKEN_FILE.read_text())
+            elif TOKEN_BACKUP.exists():
+                self.token = json.loads(TOKEN_BACKUP.read_text())
+                self._save_token()
         except Exception as e:
             self.last_error = f"could not read Google files: {e}"
         try:
-            if PENDING_FILE.exists():
-                p = json.loads(PENDING_FILE.read_text())
+            src = PENDING_FILE if PENDING_FILE.exists() else (PENDING_BACKUP if PENDING_BACKUP.exists() else None)
+            if src is not None:
+                p = json.loads(src.read_text())
                 if time.time() - p.get("t", 0) < 900 and p.get("state") and p.get("verifier"):
                     self._pending = {"state": p["state"], "verifier": p["verifier"],
                                      "redirect": p.get("redirect", ""), "server": None, "t": p["t"]}
                 else:
-                    PENDING_FILE.unlink()
+                    PENDING_FILE.unlink(missing_ok=True); PENDING_BACKUP.unlink(missing_ok=True)
         except Exception:
             pass
 
@@ -117,7 +124,12 @@ class Google:
         url = self.client.get("auth_uri", "https://accounts.google.com/o/oauth2/auth") + "?" + urllib.parse.urlencode(params)
         self._pending = {"state": state, "verifier": verifier, "redirect": redirect, "server": srv, "t": time.time()}
         try:
-            PENDING_FILE.write_text(json.dumps({k: self._pending[k] for k in ("state", "verifier", "redirect", "t")}))
+            blob = json.dumps({k: self._pending[k] for k in ("state", "verifier", "redirect", "t")})
+            PENDING_FILE.write_text(blob)
+            try:
+                PENDING_BACKUP.write_text(blob); PENDING_BACKUP.chmod(0o600)
+            except Exception:
+                pass
             PENDING_FILE.chmod(0o600)
         except Exception:
             pass
@@ -177,7 +189,7 @@ class Google:
             except Exception:
                 pass
         try:
-            PENDING_FILE.unlink(missing_ok=True)
+            PENDING_FILE.unlink(missing_ok=True); PENDING_BACKUP.unlink(missing_ok=True)
         except Exception:
             pass
         self._pending = None
@@ -225,6 +237,10 @@ class Google:
         TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
         TOKEN_FILE.write_text(json.dumps(self.token))
         os.chmod(TOKEN_FILE, 0o600)
+        try:                                                    # second copy outside the repo folder (survives a wiped checkout)
+            TOKEN_BACKUP.write_text(json.dumps(self.token)); TOKEN_BACKUP.chmod(0o600)
+        except Exception:
+            pass
 
     def _access_token(self):
         with self._lock:
