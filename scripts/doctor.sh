@@ -3,7 +3,7 @@
 # Run from Windows PowerShell (one line, works even if the local repo is broken):
 #   wsl bash -lc "curl -sL https://raw.githubusercontent.com/dreamer2664/businessai2/main/scripts/doctor.sh | bash"
 # It NEVER prints secret values — only key names and value lengths.
-DOCTOR_VERSION=4
+DOCTOR_VERSION=5
 set -u
 echo "--- doctor v$DOCTOR_VERSION ---"
 REPO_URL="https://github.com/dreamer2664/businessai2.git"
@@ -72,6 +72,8 @@ python3 -c "import agent.core; print('agent.core imports OK')" 2>&1 | tail -1
 echo "--- service ---"
 if systemctl --user list-units >/dev/null 2>&1; then
   echo "(systemd user manager present)"
+  pkill -f "agent\.core" 2>/dev/null; sleep 1
+  echo "(stray bot copies killed, if any: $(pgrep -c -f 'agent.core' 2>/dev/null || echo 0) left)"
   sh scripts/service.sh 2>&1 | tail -3
   echo "active: $(systemctl --user is-active businessai 2>&1)"
   echo "--- log (last 25 lines) ---"
@@ -85,5 +87,16 @@ else
   echo "--- log (last 25 lines) ---"
   tail -25 state/doctor-run.log 2>/dev/null || echo "(no log yet)"
 fi
+echo "--- processes (every bot copy) ---"
+pgrep -af "agent.core" 2>/dev/null || echo "(no agent.core process found)"
+echo "--- machine ---"
+uptime 2>&1 | head -1
+if systemctl --user list-units >/dev/null 2>&1; then
+  echo "--- poll errors / crashes (last hour) ---"
+  journalctl --user -u businessai --since "1 hour ago" --no-pager 2>&1 | grep -iE "poll_error|handler_error|traceback|401|409|conflict|unauthorized" | tail -8 || echo "(none)"
+  echo "restarts (last hour): $(journalctl --user -u businessai --since '1 hour ago' --no-pager 2>&1 | grep -c 'Started businessai')"
+fi
+echo "--- google client file ---"
+python3 -c "import json;d=json.load(open('.secrets/google_client.json'));i=d.get('installed',d.get('web',{}));print('valid JSON, type:',('installed' if 'installed' in d else ('web' if 'web' in d else '?')),'| id+secret:',bool(i.get('client_id')) and bool(i.get('client_secret')))" 2>&1
 echo "--- REPORT END ---"
 echo "Paste everything above back to the chat."
