@@ -369,7 +369,8 @@ class Accounts:
         if not (self.google and self.google.connected()):
             self.log("code_needed_no_gmail", site=site)
             return False
-        code, mail = self.google.find_code(sender_hint=site.split(".")[0], tries=8, wait=15)
+        mb = getattr(self, "mailbox", None)                              # item G: the Verification pile first, then the general search
+        code, mail = (mb.code(site.split(".")[0], tries=8, wait=15) if mb else self.google.find_code(sender_hint=site.split(".")[0], tries=8, wait=15))
         if not code:
             link, mail = self.google.find_link(sender_hint=site.split(".")[0], tries=2, wait=10)
             if link:

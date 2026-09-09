@@ -38,8 +38,12 @@ Reality check on 2026-09-09 with the real browser:
       headless visitor, no walls in ~40 polite hits; readers rewritten for the 2026 layouts, Vinted's own page JSON gives
       seller location / feedback split / buyers' words / shipping; markets 20→40, sellers 34; docs/MARKETS.md). Still to do
       on this item: the same live check from the PC, Facebook stays waters-only, eBay sold-listings cross-check (arbitrage).
-- [ ] G. Gmail as a tool — labels (Verification / Leads / Alerts), code fetching, tidy inbox; sign-up training on the
-      local fake sites, real sign-ups only on owner-approved ones.
+- [x] G. Gmail as a tool (2026-09-09 night: agent/mailbox.py — labels Verification / Leads / Alerts / Newsletters created in the
+      real mailbox, rules EN+IT, 15-min tidy that labels, marks read and archives by age (never deletes or sends), leads flagged
+      to the owner and never answered, codes fetched from the Verification pile first (chat + sign-up skill), /mail · 'tidy the
+      inbox' · 'any leads?', /status mail line; docs/MAILBOX.md; mailbox 43/43 + live) — labels (Verification / Leads / Alerts),
+      code fetching, tidy inbox; sign-up training on the local fake sites (accounts 18/18 covers it), real sign-ups only on
+      owner-approved ones.
 - [ ] H. Knowledge — pack #3 (dropshipping/used-goods/marketplaces): seed exists (37 guides); grow to ~150–200 pages,
       scored, size-budgeted.
 - [ ] I. Thinking — the live viewer shows plan → critique → act per step; the reflection is the agent's own words,
@@ -51,3 +55,4 @@ Reality check on 2026-09-09 with the real browser:
 - 2026-09-09 (evening): A proven live with the owner; B + C shipped (youtube 12→19, brief 34→39, talk +3, fallback 17→20). Next: D (Doc templates + heartbeat doc), E (time floors/ceilings, projects).
 - 2026-09-09 (night): F shipped (markets 40/40, sellers 34/34, subito live e2e), D shipped (progress 16/16 live-verified). Next: E (time floor + project list), then G/H/I.
 - 2026-09-09 (night, later): E shipped (floor 44/44). Next: G (Gmail labels/tidy), H (knowledge pages), I (plan → critique → act on the live screen).
+- 2026-09-09 (night, later): G shipped (mailbox 43/43, live labels in the real Gmail). Next: H (knowledge pages), I (plan → critique → act).

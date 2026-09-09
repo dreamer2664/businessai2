@@ -85,6 +85,10 @@ Try it without Telegram: `python3 -m agent.viewer --demo` (runs a few read-only 
 "that's enough" closes it), "at most 20 min" a ceiling with a timer, no time = the agent picks and says why. Ideas from
 brainstorms and "new project: …" live in `/projects` and are continued in free windows. [docs/TIME.md](docs/TIME.md).
 
+**Mailbox** — the app's Gmail is sorted every 15 min into Verification / Leads / Alerts / Newsletters (label, read,
+archive by age — never delete or send); leads are flagged to you and never answered by the agent; verification codes
+come from the Verification pile first. `/mail`, "tidy the inbox", "any leads?". [docs/MAILBOX.md](docs/MAILBOX.md).
+
 ## Customer messages (milestone 5, practice channel)
 - `agent/inbox.py` reads `state/inbox.jsonl`, classifies each message (order status, damaged, return, cancel, discount,
   product question, complaint, compliment, spam, press/partnership, other), drafts a reply with the thinking model

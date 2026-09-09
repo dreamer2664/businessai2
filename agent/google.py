@@ -13,6 +13,7 @@ import base64
 import email
 import email.policy
 import http.server
+import html
 import json
 import pathlib
 import mimetypes
@@ -448,6 +449,50 @@ class Google:
         self._req(f"{GMAIL}/messages/{mid}/modify", method="POST",
                   data=json.dumps({"removeLabelIds": ["INBOX"]}).encode(),
                   headers={"Content-Type": "application/json"})
+
+    # ---- Gmail as a tool (owner's item G): labels, light listing, modify ----------------------------------
+    def labels(self):
+        """All labels of the mailbox → {name: id} (system + user)."""
+        d = self._get(f"{GMAIL}/labels")
+        return {l["name"]: l["id"] for l in d.get("labels", []) if l.get("name") and l.get("id")}
+
+    def ensure_label(self, name, existing=None):
+        """The id of label `name`, created when missing (shown in the Gmail sidebar). Never deletes anything."""
+        existing = existing if existing is not None else self.labels()
+        if name in existing:
+            return existing[name]
+        d = self._req(f"{GMAIL}/labels", method="POST",
+                      data=json.dumps({"name": name, "labelListVisibility": "labelShow", "messageListVisibility": "show"}).encode(),
+                      headers={"Content-Type": "application/json"})
+        self.log("gmail_label_created", name=name)
+        return d.get("id", "")
+
+    def modify(self, mid, add=(), remove=()):
+        """Add/remove label ids on one message (archive = remove INBOX, read = remove UNREAD). Nothing is ever deleted."""
+        body = {}
+        if add:
+            body["addLabelIds"] = list(add)
+        if remove:
+            body["removeLabelIds"] = list(remove)
+        if not body:
+            return {}
+        return self._req(f"{GMAIL}/messages/{mid}/modify", method="POST", data=json.dumps(body).encode(),
+                         headers={"Content-Type": "application/json"})
+
+    META_HEADERS = ("From", "To", "Subject", "Date", "List-Unsubscribe", "List-Id", "Precedence", "Auto-Submitted", "Authentication-Results")
+
+    def list_mail_meta(self, query="newer_than:2d", limit=25):
+        """Light listing (headers + snippet, no body): [{id, thread, labels, from, subject, date, snippet, internal_ms, headers}]."""
+        d = self._get(f"{GMAIL}/messages", q=query, maxResults=limit)
+        out = []
+        for m in d.get("messages", []):
+            url = f"{GMAIL}/messages/{m['id']}?format=metadata&" + "&".join("metadataHeaders=" + h for h in self.META_HEADERS)
+            full = self._req(url)
+            hd = {h.get("name", ""): h.get("value", "") for h in (full.get("payload") or {}).get("headers", [])}
+            out.append({"id": m["id"], "thread": full.get("threadId", ""), "labels": full.get("labelIds", []),
+                        "from": hd.get("From", ""), "to": hd.get("To", ""), "subject": hd.get("Subject", ""), "date": hd.get("Date", ""),
+                        "snippet": html.unescape(full.get("snippet", "") or ""), "internal_ms": int(full.get("internalDate", 0) or 0), "headers": hd})
+        return out
 
     CODE_RE = re.compile(r"(?<![\d-])(\d{4,8})(?![\d-])")
 

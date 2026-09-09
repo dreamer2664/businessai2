@@ -50,6 +50,7 @@ from .rehearsal import Rehearsal
 from .mind import Mind
 from .progress import Progress
 from . import projects as _projects
+from . import mailbox as _mailbox
 
 
 def money_list(orders):
@@ -88,7 +89,7 @@ while I work: "status" / "what are you doing" · "why" · "hurry up" · "stop" �
 /lessons — what I learned from my last jobs (I reflect after every one) · /thinking — what is on my mind right now
 /ideas — business ideas I jotted from short videos (/ideas <topic> = go watch some now) · /study [topic] — find and keep a good PDF in my library
 /accounts — the site accounts I created with my own e-mail (I sign up when a task needs it and tell you in one line; never money sites) · /accounts allow <site>
-/library — the documents I've written (seller checks, research, comparisons); they also land in my Drive folder · /progress — today's log in Google Docs (every job writes there as it goes; long jobs get their own page) · /projects — the ideas I'm working on in free windows ('new project: …' adds one)
+/library — the documents I've written (seller checks, research, comparisons); they also land in my Drive folder · /progress — today's log in Google Docs (every job writes there as it goes; long jobs get their own page) · /projects — the ideas I'm working on in free windows ('new project: …' adds one) · /mail — my inbox sorted into Verification / Leads / Alerts / Newsletters ('tidy the inbox' now, 'any leads?')
 time: "at least 3 hours" = a floor (first pass, then deeper + project steps until the time is used — 'that's enough' closes it) · "at most 20 min" / "in 10 min" = a ceiling with a timer · nothing = I pick and say why
 /screen · /watch on|off — see my browser · /status · /selftest
 Browsing is read-only: I never log in, pass CAPTCHAs, buy or post. Money, public posts and customer messages will always need your OK."""
@@ -156,11 +157,13 @@ class Agent:
         self.google = Google(log=self.log)
         self.google_reconnect_told = 0
         self.fallback = Fallback(google=self.google, log=self.log)
+        self.mailbox = _mailbox.Mailbox(google=self.google, log=self.log, owner_addresses=self.fallback.owner_addresses)   # item G
         self.fallback.owner_id_fn = lambda: self.owner_id or 0
         self._tg_auth_fails = 0
         self.briefer = Brief(planner=self.planner, log=self.log)
         self.accounts = Accounts(google=self.google, log=self.log, notify=self.notify, ask=self.ask)
         self.accounts.eyes = self.eyes
+        self.accounts.mailbox = self.mailbox
         self.sellers = SellerCheck(self.tasks, planner=self.planner, log=self.log, viewer=self.viewer, pace=self.pace, eyes=self.eyes)
         self.sellers.accounts = self.accounts
         self.tasks.accounts = self.accounts                  # CAPTCHA solvers + one-tap owner fallback for essential pages
@@ -679,6 +682,19 @@ class Agent:
             self.notify("📥 Checked: no new customer messages.")
         return len(new)
 
+    def run_tidy_mail(self, tell=False):
+        """Sort the app mailbox into labels (item G). Quiet unless asked or a lead arrived: leads are for the owner, never answered by me."""
+        r = self.mailbox.tidy()
+        if r.get("error") and tell:
+            self.notify(f"📧 Couldn't tidy the inbox: {r['error']}")
+            return
+        if tell:
+            by = r.get("by", {})
+            self.notify(f"📧 Inbox tidied: {r.get('labelled', 0)} labelled (verification {by.get('verification', 0)} · leads {by.get('leads', 0)} · alerts {by.get('alerts', 0)} · "
+                        f"newsletters {by.get('newsletters', 0)}), {r.get('archived', 0)} archived. Nothing deleted.")
+        for l in r.get("leads", [])[:3]:
+            self.notify(f"📩 New lead in my inbox — {l['from']} — “{l['subject']}”. I don't answer it; tell me what to reply and I draft it for your approval.")
+
     def poll_fallback(self):
         """Answer owner mail + backup-bot messages (the fallback channel)."""
         try:
@@ -1049,6 +1065,9 @@ class Agent:
         pr_ = _projects.command(self.projects, text)
         if pr_ is not None:
             return pr_
+        mb_ = _mailbox.command(self.mailbox, text, lambda: threading.Thread(target=self.run_tidy_mail, args=(True,), daemon=True).start())
+        if mb_ is not None:
+            return mb_
         if low.startswith("/progress") or re.fullmatch(r"(where is|show me|send me|link to)? ?(the |your |today'?s )?(progress|day log|job log)( doc(ument)?| please)?", low.strip(" ?.!")):
             if not self.google.connected():
                 return "My Google isn't connected here, so there is no progress document — /google connect first. Meanwhile 'status' tells you what I'm doing."
@@ -1085,7 +1104,7 @@ class Agent:
             self.notify("My Gmail isn't connected here — /google connect once, then I can read verification codes myself.")
             return
         try:
-            code, mail = self.google.find_code(hint, since_minutes=30, tries=6, wait=20)
+            code, mail = self.mailbox.code(hint, since_minutes=30, tries=6, wait=20)
             if code:
                 self.notify(f"📧 Code: {code}\n(from {mail['from'][:60]} — “{mail['subject'][:60]}”)")
                 return
@@ -2473,6 +2492,9 @@ class Agent:
         if self.fallback.due():
             threading.Thread(target=self.poll_fallback, daemon=True).start()
             return
+        if self.mailbox.due():
+            threading.Thread(target=self.run_tidy_mail, daemon=True).start()
+            return
         if self.channels.due():
             threading.Thread(target=self.poll_channels, daemon=True).start()
             return
@@ -2720,6 +2742,7 @@ class Agent:
                 + s(lambda: f"channels: {', '.join(c.describe().split(' (')[0] for c in self.channels.active()) or 'none connected (/channels)'}", "channels") + "\n"
                 + s(lambda: f"{self.eyes.describe_status()} · {self.desktop.describe_status()}", "eyes") + "\n"
                 + s(lambda: f"{self.google.status()} · {self.accounts.id.describe()} · {len(self.accounts.data['accounts'])} site account(s)", "google") + "\n"
+                + s(self.mailbox.status, "mail") + "\n"
                 + s(lambda: f"fallback: {self.fallback.status().splitlines()[0][2:]}", "fallback") + "\n"
                 + s(lambda: f"{self.pace.text()}" + (f" · plan: {self.active_brief['goal'][:60]} (step {self.viewer.plan['step'] + 1 if self.viewer.plan else '?'}/{len(self.active_brief['steps'])})" if self.active_brief else ""), "pace") + "\n"
                 + s(lambda: f"thinking: {self.mind.stats_text()}" + (f" · security checks: {self.tasks.captcha_stats['passed']} passed by myself, {self.tasks.captcha_stats['skipped']} skipped, {self.tasks.captcha_stats['owner']} handed to you" if self.tasks.captcha_stats["tried"] else ""), "mind") + "\n"
