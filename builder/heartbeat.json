@@ -1,6 +1,6 @@
 {
  "branch": "night/marathon",
- "pct": 14,
+ "pct": 26,
  "rows": [
   [
    "0",
@@ -12,7 +12,7 @@
    "1",
    "Fallback contact (Gmail + backup bot)",
    "12",
-   "IN PROGRESS (building now)"
+   "DONE (14/14 offline, live test at setup)"
   ],
   [
    "2",
@@ -70,8 +70,8 @@
   ]
  ],
  "latest": [
-  "Docs API enabled by owner; native writer live-verified (7/7 + live PASS).",
-  "PC healthy on latest main (one bot, 409 was transient).",
-  "Now building: Gmail two-way fallback (item 1)."
+  "Fallback contact built: Gmail two-way + backup bot + watchdog (14/14).",
+  "Full regression matches main baselines \u2014 zero regressions.",
+  "Next: merge item-1 slice to main, then item 10 (YouTube)."
  ]
 }
