@@ -364,6 +364,24 @@ class Google:
                         "date": str(msg.get("Date", "")), "snippet": full.get("snippet", ""), "text": re.sub(r"\s+", " ", body).strip()[:4000]})
         return out
 
+    def send_mail(self, to, subject, body, html=None):
+        """Send an email as the app account (fallback channel: reports + replies to the owner). Returns the sent id."""
+        msg = email.message.EmailMessage(policy=email.policy.default)
+        msg["To"] = to
+        msg["From"] = self.account() or "me"
+        msg["Subject"] = subject
+        if html:
+            msg.set_content(body)
+            msg.add_alternative(html, subtype="html")
+        else:
+            msg.set_content(body)
+        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+        d = self._req(f"{GMAIL}/messages/send", method="POST",
+                      data=json.dumps({"raw": raw}).encode(),
+                      headers={"Content-Type": "application/json"})
+        self.log("gmail_sent", to=str(to)[:60], subject=str(subject)[:60])
+        return d.get("id", "")
+
     CODE_RE = re.compile(r"(?<![\d-])(\d{4,8})(?![\d-])")
 
     def find_code(self, sender_hint="", since_minutes=15, tries=6, wait=20):
