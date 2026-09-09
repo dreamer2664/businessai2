@@ -16,7 +16,7 @@ build on `night/marathon`, merge per item only when the full battery holds.
 - [ ] 4. YouTube trending + top comments (official API first, browser fallback) — 7%
 - [x] 5. Google Docs layouts (core writer live-verified; per-type templates ride with item 2) — native Docs API tables/styles per report type — 8%
 - [ ] 6. Gmail mastery + safe-signup training (fakes first, real signups only on owner-approved sites) — 8%
-- [ ] 7. Time budgets + priority queue (High=scrape, Medium=log, Low=brainstorm) + duration parsing — 8%
+- [x] 7. Time budgets + priority queue (High=scrape, Medium=log, Low=brainstorm) + duration parsing — 8%
 - [ ] 8. Pack #3 dropshipping/business feed + tests/dropship.txt (seed tonight, grow across sessions) — 10%
 - [ ] 9. Viewer reasoning upgrade — thinking panel for owner + agent — 6%
 - [x] 10. Heartbeat/progress system + docs + full regression battery — 7%
@@ -27,3 +27,4 @@ build on `night/marathon`, merge per item only when the full battery holds.
 - 2026-09-09 00:35 UTC: Google CONNECTED (chat-path OAuth, send scope). Heartbeat doc live. Marathon 8%. Owner to sleep; resume on 'go'.
 - 2026-09-09 02:4x UTC: item 1 DONE (agent/fallback.py, 14/14 offline, docs/FALLBACK.md, zero regressions) — merged to main. Item 5 core done (native writer 7/7 + live PASS). Heartbeat 26%. Next: item 10 (regression battery).
 - 2026-09-09 03:x UTC: item 10 DONE (score_all battery + suite hardening) — merged to main. Heartbeat 33%. Next: item 7 (time budgets).
+- 2026-09-09 03:x UTC: item 7 DONE (queue 20/20, battery green) — merged to main. Heartbeat 41%. Next: item 2 (smarter research).

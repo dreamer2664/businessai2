@@ -166,10 +166,12 @@ class Tasks:
                 results = b.search_results(topic, 12)
             except BrowserError as e:
                 return "\n".join(report + [f"(web search failed: {e})"])
-            stopped = False
+            stopped = False; cut = False
             for r in results:
-                if self._stopped():
-                    stopped = True; break
+                if self._stopped() or self._over_budget():
+                    cut = self._over_budget() and not self._stopped()
+                    stopped = self._stopped()
+                    break
                 if self._hurried() and len(opened) >= max(1, n_pages - 1):
                     break
                 if len(opened) >= n_pages or FORUM.search(r["url"]):
@@ -192,13 +194,13 @@ class Tasks:
         # 3) what the owner added while I was reading ("also look at prices in germany") → one or two more pages on that
         change, extra = self.owner_change.strip(), []
         self.owner_change = ""
-        if change and not self._stopped():
+        if change and not self._stopped() and not self._over_budget():
             q = re.sub(r"^\W*(also|and|please|can you|could you|don'?t forget( to)?|make sure( to)?|remember( to)?)\s+", "", change, flags=re.I).strip(" .")
             q = re.sub(r"^(look at|check|include|add|consider|read about|find)\s+", "", q, flags=re.I).strip() or change
             try:
                 with self._session() as b:
                     for r in b.search_results(f"{topic} {q}", 8):
-                        if len(extra) >= (1 if self._hurried() else 2) or self._stopped():
+                        if len(extra) >= (1 if self._hurried() else 2) or self._stopped() or self._over_budget():
                             break
                         if FORUM.search(r["url"]) or any(r["url"] == u for _, u, _ in opened):
                             continue
@@ -231,7 +233,7 @@ class Tasks:
                 report.append(f"\n{title}\n{url}\n" + "\n".join(f"• {s}" for s in ks))
         if change:
             report.append(f"You added “{change}” while I worked: " + (f"{len(extra)} page(s) on it are included" + (" (marked in the document)" if want_doc else "") if extra else "I searched for it but found nothing solid — say it again with other words if it matters") + ".")
-        report.append(f"({len(opened)} pages read in {time.time() - t0:.0f}s" + (" — stopped early as you asked" if stopped else "") + ")")
+        report.append(f"({len(opened)} pages read in {time.time() - t0:.0f}s" + (" — stopped early as you asked" if stopped else (" — quiet-time budget ran out, I stopped here" if cut else "")) + ")")
         out = "\n".join(report)
         if self.memory and opened:
             self.memory.note("research", topic, brief or out, [u for _, u, _ in opened])
@@ -334,14 +336,14 @@ class Tasks:
             queries = [f"{product} dropshipping supplier", f"{product} wholesale supplier Europe"]
             seen = set()
             for q in queries:
-                if self._stopped() or (self._hurried() and rows):
+                if self._stopped() or self._over_budget() or (self._hurried() and rows):
                     break
                 try:
                     results = b.search_results(q, 10)
                 except BrowserError:
                     continue
                 for r in results:
-                    if self._stopped():
+                    if self._stopped() or self._over_budget():
                         break
                     if r["url"] in seen or FORUM.search(r["url"]) or len(rows) >= (n_pages if self._hurried() else n_pages * 2):
                         continue
@@ -654,6 +656,13 @@ class Tasks:
         """True when the owner said stop mid-job — long loops check this between pages."""
         p = self.pace
         return bool(p and hasattr(p, "should_stop") and p.should_stop())
+
+    def _over_budget(self):
+        """Quiet-time budget used up → long loops wrap up early (owner may be back)."""
+        try:
+            return bool(self.pace and self.pace.over_budget())
+        except Exception:
+            return False
 
     def _hurried(self):
         p = self.pace

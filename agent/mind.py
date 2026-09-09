@@ -56,6 +56,11 @@ def _load(path, limit=None):
     return out
 
 
+from . import config as _config
+
+QUEUE_FILE = _config.STATE_DIR / "queue.json"
+
+
 class Mind:
     def __init__(self, planner=None, log=None, pace=None, viewer=None):
         self.planner = planner
@@ -64,6 +69,91 @@ class Mind:
         self.viewer = viewer
         self.job = None          # {"goal","kind","started","steps","step","done":[...],"snags":[...],"next":"", "why": ""}
         self.queue = []          # jobs the owner asked for while one was running: [(text, t)]
+        self.q_load()  # item 7: the queue survives restarts
+
+    # ---- priority queue (item 7): scrape/job high, log medium, brainstorm low ----
+    def q_classify(self, item):
+        import re
+        text = (item.get("goal", "") if isinstance(item, dict) else str(item)).lower()
+        if re.search(r"\b(brainstorm|ideas?|idee|think of|what should|which .* should|proponi|che nome|name ideas)\b", text):
+            return ("brainstorm", 2)
+        if re.search(r"\b(remind|remember|note|log|diary|write down|ricorda|appunta|promemoria|diario)\b", text):
+            return ("log", 1)
+        if re.search(r"\b(research|scrape|scraping|compare|comparison|visit|watch|suppliers|/shop|shop read|reviews of|cerca|confronta)\b", text):
+            return ("scrape", 0)
+        return ("job", 0)
+
+    def q_add(self, item, prio=None, kind=None):
+        """Queue an owner request (text or brief dict). Returns its 1-based position."""
+        k, pr = self.q_classify(item)
+        self.queue.append({"item": item, "ts": time.time(),
+                           "prio": pr if prio is None else prio, "kind": kind or k})
+        self.q_save()
+        return len(self.queue)
+
+    def q_next(self):
+        """Pop the highest-priority entry (FIFO inside a priority). Returns the entry or None."""
+        if not self.queue:
+            return None
+        i = min(range(len(self.queue)), key=lambda j: (self.queue[j].get("prio", 1), self.queue[j].get("ts", 0)))
+        e = self.queue.pop(i)
+        self.q_save()
+        return e
+
+    def q_peek(self):
+        """Next entry without popping (highest priority, FIFO inside), or None."""
+        if not self.queue:
+            return None
+        i = min(range(len(self.queue)), key=lambda j: (self.queue[j].get("prio", 1), self.queue[j].get("ts", 0)))
+        return self.queue[i]
+
+    def q_list(self):
+        if not self.queue:
+            return "Queue's empty — nothing waiting.\n/queue clear · /queue high|med|low <n>"
+        names = {0: "HIGH", 1: "med", 2: "low"}
+        order = sorted(range(len(self.queue)), key=lambda j: (self.queue[j].get("prio", 1), self.queue[j].get("ts", 0)))
+        lines = []
+        for n, j in enumerate(order, 1):
+            e = self.queue[j]
+            it = e["item"]
+            label = it.get("goal", "?") if isinstance(it, dict) else str(it)
+            lines.append(f"{n}. [{names.get(e.get('prio', 1), '?')}/{e.get('kind', 'job')}] {label[:70]}")
+        return "Waiting:\n" + "\n".join(lines) + "\n/queue clear · /queue high|med|low <n>"
+
+    def q_clear(self):
+        n = len(self.queue)
+        self.queue = []
+        self.q_save()
+        return n
+
+    def q_set(self, num, prio):
+        order = sorted(range(len(self.queue)), key=lambda j: (self.queue[j].get("prio", 1), self.queue[j].get("ts", 0)))
+        if num < 1 or num > len(order):
+            return None
+        e = self.queue[order[num - 1]]
+        e["prio"] = prio
+        self.q_save()
+        return e
+
+    def q_save(self):
+        import json
+        try:
+            QUEUE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            QUEUE_FILE.write_text(json.dumps(self.queue))
+        except Exception as e:
+            self.log("queue_save_failed", error=str(e)[:120])
+
+    def q_load(self):
+        import json
+        try:
+            raw = json.loads(QUEUE_FILE.read_text())
+        except Exception:
+            return
+        if isinstance(raw, list):
+            self.queue = [e for e in raw if isinstance(e, dict) and "item" in e and "prio" in e]
+            for e in self.queue:
+                e.setdefault("kind", "job")
+                e.setdefault("ts", 0)
 
     # ---- journal -------------------------------------------------------------------------------------------------
     def begin(self, goal, kind="", steps=None, why=""):

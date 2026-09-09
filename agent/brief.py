@@ -31,17 +31,22 @@ logs in or posts publicly. Owner's message: """
 # pace words → (pace, minutes)
 _QUICK = r"\b(real quick|quick(ly)?|asap|right away|fast|hurry|in a hurry|subito|veloce|rapido)\b"
 _SLOW = r"\b(take (it|your time) (real |really )?slow|take your time|no rush|no hurry|slowly|whenever|con calma|piano)\b"
-_DEADLINE = r"\b(?:in|within|entro|tra)\s+(\d+|a|an|one|two|three|five|ten|fifteen|twenty|thirty|half an)\s*(min(?:ute)?s?|h(?:ou)?rs?|ore|minuti|day|days|giorni)\b"
-_AWAY = r"\b(?:(?:i(?:'m| am| will be| ll be)|gonna be|going to (?:be|work)|at work|out|away|busy|sleeping|asleep|sono (?:fuori|via|al lavoro|occupat[oa])|torno|dormo)\D{0,40}?)(\d+|a|an|one|two|three|four|five|six|eight|ten|half an|un|una|due|tre|quattro|cinque|sei|otto)\s*(h(?:ou)?rs?|or[ae]|min(?:ute)?s?|minuti)\b"
-_NUM = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "eight": 8, "ten": 10, "fifteen": 15,
-        "twenty": 20, "thirty": 30, "half an": 0.5, "un": 1, "una": 1, "due": 2, "tre": 3, "quattro": 4, "cinque": 5, "sei": 6, "otto": 8}
+_DEADLINE = r"\b(?:in|within|entro|tra|fra)\s+(?:(mezz[’']?ora)|(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|half an|half|un[’']?|una|due|tre|quattro|cinque|sei|sette|otto|nove|dieci|undici|dodici)\s*(min(?:ute)?s?|h(?:ou)?rs?|or[ae]|minuti|day|days|giorni))\b"
+_AWAY = r"\b(?:(?:i(?:'m| am| will be| ll be)|gonna be|going to (?:be|work)|at work|out|away|busy|sleeping|asleep|sono (?:fuori|via|al lavoro|occupat[oa])|torno|dormo)\D{0,40}?)(?:(mezz[’']?ora)|(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|half an|half|un[’']?|una|due|tre|quattro|cinque|sei|sette|otto|nove|dieci|undici|dodici)\s*(h(?:ou)?rs?|or[ae]|min(?:ute)?s?|minuti))\b"
+_NUM = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
+        "ten": 10, "eleven": 11, "twelve": 12, "fifteen": 15, "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50,
+        "half an": 0.5, "half": 0.5, "un": 1, "una": 1, "due": 2, "tre": 3, "quattro": 4, "cinque": 5, "sei": 6,
+        "sette": 7, "otto": 8, "nove": 9, "dieci": 10, "undici": 11, "dodici": 12}
 
 
 def _minutes(n, unit):
-    n = _NUM.get(n, None) if not str(n).isdigit() else int(n)
+    n = str(n).replace("’", "'").strip().rstrip("'")
+    if "mezz" in n:
+        return 30
+    n = _NUM.get(n, None) if not n.isdigit() else int(n)
     if n is None:
         return None
-    u = unit.lower()
+    u = (unit or "min").lower()
     if u.startswith(("h", "ore", "ora")):
         return int(n * 60)
     if u.startswith(("day", "giorn")):
@@ -86,18 +91,40 @@ def topic_of(text):
     return best or text.strip()
 
 
+def _dur(m):
+    """Minutes from a _DEADLINE/_AWAY match (group 1 = bare mezz'ora, else group 2 + 3)."""
+    return 30 if m.group(1) else _minutes(m.group(2), m.group(3))
+
+
+def parse_duration(text):
+    """First explicit duration in text → minutes (English + Italian), or None."""
+    low = " " + text.lower() + " "
+    m = re.search(_DEADLINE, low)
+    if m:
+        mins = _dur(m)
+        if mins:
+            return mins
+    m = re.search(r"\b(mezz[’']?ora|un[’']ora)\b", low)
+    if m:
+        return 30 if m.group(1).startswith("mezz") else 60
+    m = re.search(r"\b(\d+)\s*(min(?:ute)?s?|h(?:ou)?rs?|or[ae]|minuti)\b", low)
+    if m:
+        return _minutes(m.group(1), m.group(2))
+    return None
+
+
 def parse_pace(text):
     """Rules only. Returns {"pace": quick|normal|slow, "deadline_min": int|None, "budget_min": int|None, "why": str}."""
     low = " " + text.lower() + " "
     out = {"pace": "normal", "deadline_min": None, "budget_min": None, "why": ""}
     m = re.search(_AWAY, low)
     if m:
-        mins = _minutes(m.group(1), m.group(2))
+        mins = _dur(m)
         if mins and mins >= 30:
             out.update(pace="slow", budget_min=mins, why=f"you said you are away for about {mins // 60 if mins >= 60 else mins} {'hours' if mins >= 120 else 'hour' if mins >= 60 else 'minutes'}")
     m = re.search(_DEADLINE, low)
     if m:
-        mins = _minutes(m.group(1), m.group(2))
+        mins = _dur(m)
         if mins:
             if out["budget_min"] and mins == out["budget_min"]:
                 pass                                                    # "in 5 hours" already read as the away-time
