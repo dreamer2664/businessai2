@@ -537,7 +537,7 @@ class Google:
             elif kind == "bullet":
                 pending.append({"createParagraphBullets": {
                     "range": {"startIndex": idx, "endIndex": idx + len(text)},
-                    "bulletPreset": "BULLET_DISC"}})
+                    "bulletPreset": "BULLET_DISC_CIRCLE_SQUARE"}})
             idx += len(text)
         flush()
 
