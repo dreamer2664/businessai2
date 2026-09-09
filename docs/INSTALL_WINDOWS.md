@@ -45,21 +45,36 @@ journalctl --user -u businessai -f     # live log (Ctrl-C to leave)
 systemctl --user restart businessai    # restart after an update
 ```
 
-## 4. Keep it running when the PC is on
-WSL stops when the last Ubuntu window is closed, unless something keeps it
-alive. Two options:
-- **Simple:** keep an Ubuntu window open (minimised is fine).
-- **Automatic:** make Windows start it at login. Press Win+R, type
-  `shell:startup`, Enter; in that folder create a file `businessai.vbs` with:
-  ```
-  CreateObject("WScript.Shell").Run "wsl -d Ubuntu -u " & CreateObject("WScript.Network").UserName & " -- sh -lc 'systemctl --user start businessai; sleep infinity'", 0
-  ```
-  (If your Ubuntu username differs from your Windows username, replace the
-  `CreateObject("WScript.Network").UserName` part with `"yourubuntuname"`.)
-  This starts Ubuntu invisibly at every login.
+## 4. Keep it running when the PC is on (the #1 cause of "the bot doesn't answer")
+Windows switches the whole Linux VM **off 60 seconds after the last `wsl` window closes** — the bot's own service and
+its auto-restart can do nothing about that, because the computer it runs on is gone. Symptom: the bot answers only
+while someone has a terminal open, and `wsl -l -v` shows `Ubuntu Stopped`. The journal shows `Stopping businessai.service`
+right after each command window closes and a `-- Boot --` line when the next command wakes Linux up.
 
-Also, in Windows **Settings → System → Power**, set "sleep" to Never while
-plugged in, otherwise the bot naps with the PC.
+Proven fix (2026-09-09, WSL 2.7): two settings + a keeper task. Paste this whole block into **PowerShell** once:
+```powershell
+@"
+[wsl2]
+vmIdleTimeout=-1
+"@ | Set-Content "$env:USERPROFILE\.wslconfig" -Encoding ASCII
+wsl --shutdown
+$a = New-ScheduledTaskAction -Execute "C:\Windows\System32\wsl.exe" -Argument '-d Ubuntu -u dreamer2664 -- bash -c "while true; do sleep 300; done"'
+$t = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+$s = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
+Register-ScheduledTask -TaskName "BusinessAI-WSL" -Action $a -Trigger $t -Settings $s -Force | Out-Null
+Start-ScheduledTask -TaskName "BusinessAI-WSL"
+```
+(replace `dreamer2664` with your Ubuntu user name if different.) `vmIdleTimeout=-1` = never stop Linux for being idle;
+the task opens Linux at every Windows logon and holds it open. Linger for the user must be on (`loginctl enable-linger`,
+`service.sh` does it) so the service survives without a login session.
+
+Check (all three must hold): `Get-ScheduledTask BusinessAI-WSL` → **Running** (Ready = the keeper died);
+`wsl -l -v` → **Running**; `wsl bash -lc "systemctl --user is-active businessai"` → **active**.
+Real proof: close every terminal, wait 10 minutes, send `hello` on Telegram.
+Note: a PowerShell wrapper around wsl.exe (`powershell -WindowStyle Hidden -Command "wsl … sleep infinity"`) did NOT
+survive — the task went back to Ready within seconds. Run wsl.exe directly.
+
+Also, in Windows **Settings → System → Power**, set "sleep" to Never while plugged in, otherwise the bot naps with the PC.
 
 ## 5. Updating
 ```sh

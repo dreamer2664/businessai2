@@ -39,4 +39,5 @@ Reality check on 2026-09-09 with the real browser:
 
 ## Log
 - 2026-09-09: list written after the audit; A/B/C first because they are what the owner sees every day.
+- 2026-09-09 (evening): ROOT CAUSE of months of 'answers only while someone works on it': Windows stops the WSL VM 60 s after the last terminal closes (journal: Stopping businessai.service after each command; -- Boot -- on the next). Fix in docs/INSTALL_WINDOWS.md §4 (.wslconfig vmIdleTimeout=-1 + keeper scheduled task). The sandbox has the same symptom for a different reason (processes suspended between turns) → the bot's home is the PC only.
 - 2026-09-09 (evening): A proven live with the owner; B + C shipped (youtube 12→19, brief 34→39, talk +3, fallback 17→20). Next: D (Doc templates + heartbeat doc), E (time floors/ceilings, projects).
