@@ -157,7 +157,7 @@ def run8():
     b = T.browser()
     return A7.ensure_account(b, "http://127.0.0.1:8098/some/page")
 ok8, note8 = T.on_hands(run8, timeout=120)
-check("a wrong owner password → honest line, still no sign-up attempt", not ok8 and "did not work" in note8 and "never try to sign up" in note8, note8)
+check("a wrong owner password → honest line, still no sign-up attempt", not ok8 and "rejected the login" in note8 and "never sign up" in note8, note8)
 check("forget removes the login", A7.forget_site_creds("127.0.0.1:8098") and A7.site_creds("http://127.0.0.1:8098/") is None)
 _acc.SITE_CREDS.unlink(missing_ok=True)
 T.on_hands(T.close_browser, timeout=30)

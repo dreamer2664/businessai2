@@ -328,7 +328,11 @@ class Accounts:
                 return True, "logged in"
             self.log("login_failed", site=a["site"], note=note[:80])
             if self.site_creds(url):
-                return False, f"I have your login for {a['site']} but it did not work: {note}. Check the e-mail/password with /accounts set {a['site']} … (I never try to sign up there myself)."
+                if re.search(r"puzzle|captcha|security check", note, re.I):
+                    return False, f"{a['site']}: your login is fine, but the site shows a picture puzzle before letting me in — {note}. One tap from you on the live screen / Chrome window and I keep the session."
+                if re.search(r"rejected|incorrect|wrong password|did not work", note, re.I):
+                    return False, f"{a['site']}: the site rejected the login you gave me ({note}). Check the e-mail/password with /accounts set {a['site']} … (I never sign up there myself)."
+                return False, f"{a['site']}: could not log in with your login — {note}"
             return False, f"I have an account on {a['site']} but could not log in: {note}"
         if not allow_signup:
             return False, "no account there and sign-up not allowed for this task"

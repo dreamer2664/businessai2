@@ -224,7 +224,15 @@ class DealHunter:
     essential_sites = ()            # the sites the owner named in this job: worth a CAPTCHA tap / an account; others are just skipped
 
     def essential(self, site):
-        return site in self.essential_sites
+        """Worth a login / a CAPTCHA tap: the owner named the site in this job, OR the owner gave me a login for it
+        (an account the owner made by hand is an explicit 'use this site')."""
+        if site in self.essential_sites:
+            return True
+        acc = getattr(self.T, "accounts", None)
+        try:
+            return bool(acc and acc.site_creds(site + ".com" if "." not in site else site))
+        except Exception:
+            return False
 
     def _login_or_signup(self, b, site, url):
         """Temu-style sites: log in with the agent's own account, or sign up once (owner approves the first time, code from Gmail)."""
@@ -234,7 +242,7 @@ class DealHunter:
         except Exception as e:
             return False, f"account on {site} failed: {str(e)[:80]}"
         if not ok:
-            return False, f"no account on {site} yet ({note})"
+            return False, note if re.search(r"^[a-z0-9.-]+:", note) else f"{site}: {note}"
         try:
             b.save_session()
             self.throttle.wait(url)
@@ -333,7 +341,13 @@ class DealHunter:
             title = ""
         if re.search(r"/risk/action/limit|/risk/limit|rate.?limit", cur, re.I) or (st != "ok" and "429" in title):
             self.throttle.punish(url); self.throttle.punish(url)              # a hard back-off: the site has had enough of this address for now
-            return [], f"{site}: has put this address on a time-out (too many visits) — nothing to do but wait; I try again in a while and use the other sites"
+            walls = getattr(self.T, "walls", None)
+            if walls:
+                try:
+                    walls.hit(url, "rate-limit")
+                except Exception:
+                    pass
+            return [], f"{site}: has put this address on a time-out (too many visits from here today) — it usually clears within a few hours; I skip it for now and try again on the next job"
         challenged = bool(re.search(r"/risk/challenge|captcha_type=|/challenge\?", cur, re.I)) or st == "captcha"
         if challenged:
             # the owner named this site → it is essential: simple solvers first, then one tap from the owner (≤ 5 attempts a day), session kept
@@ -352,7 +366,8 @@ class DealHunter:
             except Exception:
                 pass
         if re.search(r"/login\b|/signin\b|login\.html", cur, re.I) and cur != url:
-            if site in NEEDS_ACCOUNT and getattr(self.T, "accounts", None) is not None and self.essential(site):
+            acc = getattr(self.T, "accounts", None)
+            if acc is not None and (site in NEEDS_ACCOUNT or acc.site_creds(site + ".com" if "." not in site else site)) and self.essential(site):
                 ok, note = self._login_or_signup(b, site, url)
                 if not ok:
                     self.throttle.punish(url)
@@ -363,7 +378,7 @@ class DealHunter:
                     pass
             else:
                 self.throttle.punish(url)
-                return [], f"{site}: sends visitors to a login page before showing results — I never log in by myself"
+                return [], f"{site}: sends visitors to a login page before showing results — give me a login with /accounts set {site}.com <email> <password> and I use it"
         if st != "ok":
             self.throttle.punish(url)
             return [], f"{site}: {st} wall on this machine"
