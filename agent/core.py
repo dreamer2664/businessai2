@@ -1188,7 +1188,7 @@ class Agent:
             if arg.startswith("forget "):
                 dropped = self.accounts.forget_site_creds(arg[7:])
                 return (f"\U0001F6AB {arg[7:]} forgotten" + (" — your login there is deleted too" if dropped else "") + " — no more sign-ups there.") if (self.accounts.forget_site(arg[7:]) or dropped) else "That site wasn't on my lists."
-            if arg in ("logins", "creds", "credentials", "set"):
+            if arg in ("logins", "login", "creds", "credentials", "set", "sites", "passwords"):
                 return self.accounts.creds_text() + "\n\nTo add one: /accounts set <site> <email> <password> — I delete your message right after reading it."
             m_s = re.match(r"^(?:signup|sign up|register|login|log in)\s+(?:on\s+)?([a-z0-9.-]+)", arg)
             if m_s:

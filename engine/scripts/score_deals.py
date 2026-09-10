@@ -26,6 +26,19 @@ check("synonyms: 'bicicletta corsa' matches 'bici da corsa'", D.matches({"title"
 check("'nike air max 90' ≠ 'Air Max 97'", not D.matches({"title": "Nike Air Max 97"}, "nike air max 90"))
 check("vague items are spotted: iphone, dyson, tv — not 'iphone 12' / 'dyson v8'", [n for n, _ in D.vague_items([{"name": "iphone"}, {"name": "iphone 12"}, {"name": "dyson v8"}, {"name": "dyson"}, {"name": "bici usata"}, {"name": "tv"}])] == ["iphone", "dyson", "bici usata", "tv"])
 
+# ---- the owner's own words around the item; all-in caps; wrong-thing; rephrasing ---------------------------------
+from agent.brief import clean_item_name
+check("clean_item_name: 'the cheapest FM radio you can find' → 'fm radio'", clean_item_name("the cheapest FM radio you can find") == "fm radio", clean_item_name("the cheapest FM radio you can find"))
+check("clean_item_name: 'a good used kindle' → 'kindle'; 'caricatore iphone più economico che trovi' → 'caricatore iphone'", clean_item_name("a good used kindle") == "kindle" and clean_item_name("caricatore iphone più economico che trovi") == "caricatore iphone")
+_b = Brief().make("can you look up the cheapest FM radio you can find on vinted, shein, temu, banggood and wallapop?")
+_b = Brief().amend(_b, "max 5€ including shipping.")
+check("'max 5€ including shipping' as a change → cap 5 on the item, all-in flag", _b["items"][0]["max"] == 5 and _b.get("max_total") is True, (_b.get("items"), _b.get("max_total")))
+check("landed(): Vinted total + 2.95; a stated 'da 0,99 €' shipping is used; Temu adds nothing", D.landed({"site": "vinted", "total": 3.85}) == 6.8 and D.landed({"site": "subito", "price": 10, "shipping": "TuttoSubito from 0,99 €"}) == 10.99 and D.landed({"site": "temu", "price": 4}) == 4.0)
+check("wrong thing: 'Autoradio' and a 'Radio Watch' are not FM radios; 'Radiolina' and 'Radio sveglia' are", not D.matches({"title": "Autoradio Pioneer"}, "fm radio") and not D.matches({"title": "Radio Watch Men's Health - Orologio"}, "fm radio") and D.matches({"title": "Radiolina vintage"}, "fm radio") and D.matches({"title": "Radio sveglia Philips"}, "fm radio"))
+check("wrong thing: 'Interruttore switch' is not a Nintendo Switch; 'Cover Kindle' is not a Kindle", not D.matches({"title": "Interruttore switch luce"}, "nintendo switch") and not D.matches({"title": "Cover Kindle"}, "kindle"))
+_H0 = D.DealHunter(type("T", (), {})())
+check("rephrasings: Italian first on Vinted, English first on Banggood, never the original", _H0.rephrasings("fm radio", "vinted")[0] == "radio portatile" and _H0.rephrasings("fm radio", "banggood")[0] == "pocket radio" and "fm radio" not in _H0.rephrasings("fm radio", "vinted"))
+
 # ---- ranking ---------------------------------------------------------------------------------------------------
 cards = [{"title": "Nintendo Switch", "price": 1.0}, {"title": "Nintendo Switch Lite", "price": 74.2, "total": 74.2}, {"title": "Nintendo Switch 1", "price": 100.45, "total": 100.45},
          {"title": "Nintendo Switch completa", "price": 120}, {"title": "Custodia Nintendo Switch", "price": 5}, {"title": "Nintendo switch oled", "price": 220}, {"title": "Nintendo Switch non funziona", "price": 30}]
@@ -76,7 +89,9 @@ class _T:                                # a Tasks stand-in: no browser
 H = D.DealHunter(_T())
 res = [{"item": {"name": "dyson v8", "max": None}, "best": [dict(dy[1], site="vinted", seller="anna", condition="good", url="https://www.vinted.it/items/1")], "n_found": 4, "ref": refd},
        {"item": {"name": "xbox one", "max": 50}, "best": [], "n_found": 0, "ref": None}]
+res[1]["nearest_over"] = [{"title": "Xbox One S 500GB", "price": 60, "total": 63.5, "site": "vinted", "url": "https://www.vinted.it/items/2", "_landed": 66.45, "_ship": 2.95, "condition": "good"}]
 txt = H.summary(res, {"wallapop": "wallapop: blocks this machine (an error page instead of results) — it may work from your PC"}, ["vinted", "wallapop"], 95)
+check("summary: nothing under the cap → 'closest above your limit' with the all-in price and the link", "closest above your limit: Xbox One S 500GB — € 63.50 (+ € 2.95 shipping ≈ € 66.45 all-in)" in txt and "https://www.vinted.it/items/2" in txt, txt)
 check("summary: one line per item, best deal with price + site", "• dyson v8: best Dyson v8 — € 42.70 · good · seller anna (vinted)" in txt, txt)
 check("summary: an item with nothing says so with the cap and why", "xbox one: nothing under € 50: no listing with those words on vinted" in txt and "wallapop could not be searched" in txt, txt)
 check("summary: blocked sites are named honestly", "Not searched properly: wallapop" in txt, txt)

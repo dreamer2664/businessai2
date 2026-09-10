@@ -79,7 +79,7 @@ SOFT = re.compile(r"^(\d{2,4}gb|\d{1,2}tb|\d{2,3}cm|\d{2}|taglia|size|tg|colore|
                   r"da|di|a|il|la|le|lo|gli|of|in|corsa|città|city|mtb|elettrica|electric|usato|usata|used|nuovo|nuova|new|ottimo|buono)$", re.I)   # details, not the identity
 
 
-SYNONYMS = {"fm": ("am/fm", "fm/am", "amfm", "radiofm"), "radio": ("radiolina", "radiosveglia", "autoradio"), "portable": ("portatile", "tascabile"),
+SYNONYMS = {"fm": ("am/fm", "fm/am", "amfm", "radiofm", "radiolina", "portatile"), "radio": ("radiolina", "radiosveglia", "radioline"), "portable": ("portatile", "tascabile"),
             "speaker": ("cassa", "altoparlante", "casse"), "cassa": ("speaker", "altoparlante"), "auricolari": ("earphones", "earbuds", "cuffie"),
             "caricatore": ("charger", "alimentatore", "caricabatterie"), "charger": ("caricatore", "caricabatterie"), "cavo": ("cable", "cavetto"), "cable": ("cavo", "cavetto"),
             "borraccia": ("bottle", "thermos"), "lampada": ("lamp", "luce"), "lamp": ("lampada",),
@@ -110,6 +110,10 @@ def matches(card, name):
             continue                                                  # "taglia 54" is a detail; a bare "13" after "iphone" is the model
         core_w.append(w)
     core_w = core_w or words[:2]
+    if "radio" in core_w and "fm" in core_w and len(core_w) == 2 and _has("radio", title):
+        core_w = ["radio"]                                            # "fm radio" = any radio (FM is what a radio is); "radio cd" / "radio sveglia" stay radios too
+    if wrong_thing(title, name):
+        return False
     hit = sum(1 for w in core_w if _has(w, title))
     # a model number in the name must be in the title ("iphone 13" never matches "iPhone 12"), whatever the other words
     for w in core_w:
@@ -163,6 +167,23 @@ def floor_price(name):
         if re.search(pat, low):
             return fl
     return None
+
+
+# same word, different thing: "radio" in a car head unit, a watch brand, a radio-controlled toy; "switch" in a light switch …
+NOT_THIS = {"radio": r"\bautoradio\b|\bcar radio\b|\bstereo auto\b|\bradio watch\b|\borologio\b|\bradiocomand|\bradio ?controll|\brc\b|\bradiografia\b|\bbaby monitor\b|\bwalkie|\bricetrasmittente\b|\bcb\b",
+            "switch": r"\binterruttore\b|\blight switch\b|\bswitch ethernet\b|\bnetwork switch\b|\bkvm\b",
+            "kindle": r"\bcover\b|\bcustodia\b", "mouse": r"\btappetino\b|\bmouse ?pad\b|\btopo\b", "tablet": r"\bcover\b|\bcustodia\b|\bpellicola\b",
+            "speaker": r"\bcavo\b|\bstaffa\b|\bsupporto\b", "bici": r"\bcasco\b|\bluc[ie]\b|\bportapacchi\b|\bcamera d'aria\b|\bcopert(one|oni)\b",
+            "iphone": r"\bcover\b|\bcustodia\b|\bpellicola\b|\bvetro\b|\bcavo\b|\bcaricatore\b|\bsupporto\b"}
+
+
+def wrong_thing(title, name):
+    t = title.lower()
+    for w in item_words(name):
+        pat = NOT_THIS.get(w)
+        if pat and re.search(pat, t) and not re.search(pat, name.lower()):
+            return True
+    return False
 
 
 def rank_key(card, name, ref_price=None):
@@ -308,6 +329,41 @@ class DealHunter:
             pass
         done.add(site)
         b._prefs_done = done
+
+    # ---- other words for the same thing (a person retries with a different phrasing) --------------------------------
+    IT_SITES = ("vinted", "subito", "wallapop")          # Italian private sellers write Italian titles
+    EN_SITES = ("temu", "shein", "banggood", "dhgate", "aliexpress", "ebay", "amazon")
+    REPHRASE = {"fm radio": ["radio portatile", "radiolina", "radio fm portatile", "pocket radio", "portable radio"],
+                "radio": ["radiolina", "radio portatile", "portable radio"],
+                "bluetooth speaker": ["cassa bluetooth", "speaker bluetooth", "altoparlante bluetooth", "wireless speaker"],
+                "headphones": ["cuffie", "cuffie bluetooth", "wireless headphones"], "earbuds": ["auricolari", "auricolari bluetooth", "wireless earbuds"],
+                "phone charger": ["caricatore telefono", "caricabatterie", "usb charger"], "usb c cable": ["cavo usb c", "cavo type c", "type c cable"],
+                "power bank": ["powerbank", "batteria esterna", "portable charger"], "smartwatch": ["orologio smart", "smart watch"],
+                "desk lamp": ["lampada da scrivania", "lampada led", "led desk lamp"], "backpack": ["zaino", "zainetto"],
+                "kindle": ["kindle paperwhite", "ebook reader", "e-reader"], "keyboard": ["tastiera", "tastiera wireless", "wireless keyboard"],
+                "mouse": ["mouse wireless", "mouse senza fili", "wireless mouse"], "webcam": ["webcam hd", "webcam usb"],
+                "tripod": ["treppiede", "treppiede telefono", "phone tripod"], "phone tripod": ["treppiede telefono", "tripode smartphone", "selfie tripod"],
+                "led strip": ["striscia led", "strisce led", "led strip lights"], "fan": ["ventilatore", "mini ventilatore", "usb fan"],
+                "water bottle": ["borraccia", "borraccia termica", "thermos bottle"], "hair dryer": ["asciugacapelli", "phon"],
+                "electric toothbrush": ["spazzolino elettrico"], "scale": ["bilancia", "bilancia pesapersone", "digital scale"],
+                "nintendo switch": ["switch nintendo", "console switch"], "ps4 controller": ["controller ps4", "dualshock 4", "joystick ps4"],
+                "dyson v8": ["dyson v8 absolute", "aspirapolvere dyson v8"], "iphone charger": ["caricatore iphone", "cavo lightning", "lightning cable"]}
+
+    def rephrasings(self, name, site):
+        """Other search strings for the same item, best first for this site's language; the original is never repeated."""
+        key = " ".join(item_words(name))
+        alts = list(self.REPHRASE.get(key, []))
+        if not alts:                                                  # word-level swaps from the synonym table
+            for w in item_words(name):
+                for syn in SYNONYMS.get(w, ())[:2]:
+                    alts.append(key.replace(w, syn))
+        it_first = site in self.IT_SITES
+        alts.sort(key=lambda a: (0 if (re.search(r"[àèéìòù]|\b(portatile|cassa|cuffie|auricolari|caricatore|cavo|zaino|lampada|tastiera|treppiede|striscia|ventilatore|borraccia|bilancia|radiolina)\b", a) is not None) == it_first else 1))
+        out, seen = [], {key}
+        for a in alts:
+            if a not in seen:
+                seen.add(a); out.append(a)
+        return out[:2]
 
     # ---- one item on one site ------------------------------------------------------
     def search_site(self, b, site, item, limit=8, depth=2):
@@ -455,12 +511,23 @@ class DealHunter:
                     if self._stopped():
                         break
                     cards, note = self.search_site(b, s, it, depth=depth)
+                    if not note and not any(matches(c, it["name"]) for c in cards) and not self._stopped():
+                        for alt in self.rephrasings(it["name"], s)[: (1 if depth == 1 else 2)]:      # a person would try other words before giving up
+                            self._step(1, f"{it['name']}: nothing on {s} with those words — trying “{alt}”")
+                            self.log("deal_rephrase", site=s, item=it["name"], alt=alt)
+                            more, n2 = self.search_site(b, s, dict(it, name=alt), limit=8, depth=1)
+                            hits = [c for c in more if matches(c, it["name"]) or matches(c, alt)]
+                            if hits:
+                                for c in hits:
+                                    c["_alt"] = alt
+                                cards = cards + hits
+                                break
                     if note:
                         note = re.sub(r"^(?:" + re.escape(s) + r":\s*)+", "", note)      # never "temu: temu: …"
                         notes[s] = f"{s}: {note}"
                         self.log("deal_site_note", site=s, item=it["name"], note=note[:100])
                     for c in cards:
-                        if not matches(c, it["name"]):
+                        if not (matches(c, it["name"]) or (c.get("_alt") and matches(c, c["_alt"]))):
                             continue
                         it["_seen"] += 1
                         pr = landed(c) if self.max_total else (c.get("total") or c.get("price") or 0)

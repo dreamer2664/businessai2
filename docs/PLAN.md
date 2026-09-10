@@ -492,3 +492,9 @@ What the transcript showed and the fixes:
 - No "temu: temu: …" double prefixes; `{cap:g}` formatting (€ 5, not € 5.0).
 - Live re-run of the exact request: Vinted + Banggood read, 14 matches all over € 5 all-in, "real ones start around € 7",
   closest above the limit named with link; Shein rate-limited, Temu skipped (no tap in the sandbox), Wallapop 403 — all honest.
+- (same test, round 2) A person retries with other words before giving up: `DealHunter.rephrasings()` (REPHRASE table for ~30
+  common items en↔it, else synonym swaps; Italian first on Vinted/Subito/Wallapop, English first on the China shops) is tried
+  when a site answered but nothing matched. `wrong_thing()` / `NOT_THIS`: the same word, a different object (autoradio, a
+  "Radio Watch", a radiocomandata; interruttore "switch"; a Kindle cover) never matches. "fm radio" = any radio (FM is what a
+  radio is) — radiolina, radio sveglia, radio portatile all count. Live: the FM-radio run went from 5 min to 43 s (Temu/Shein
+  last + no wait in the sandbox), 22 matches on three sites, honest "nothing under € 5 all-in; closest € 6.80". score_deals 61.
