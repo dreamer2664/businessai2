@@ -48,3 +48,4 @@
   queue 20, research 19, youtube 12, dropship 10, think 12, gmail 9, markets 20, stop 11, store 40, study 20, talk 460, sites 41, sellers 34,
   docs 20, accounts 18, rehearsal 19, walls 14 — all full marks except the pack (52/55, as always).
   Token hygiene: the token that was leaked is still the live one — the owner should revoke it and issue a new one.
+- 2026-09-10 (builder) Progress-Doc entry 16 could not be posted from the sandbox: Google answered "disabled_client — The OAuth client was disabled" (the sandbox's token/client bhq1ql12…). The PC reports google: connected, so this is sandbox-side; re-enable the client at console.cloud.google.com → Google Auth Platform → Clients (or create a new Desktop client) and re-post. Entry text = commit 409e41b message + docs/PLAN.md "Shein + Temu" section.
