@@ -253,7 +253,7 @@ class SellerCheck:
         self.pace = pace
         self.eyes = eyes
         self.live_change = ""            # the owner's mid-job words ("only sellers that ship from italy") — read before judging
-        self.throttle = markets.Throttle()   # one polite pace for every marketplace (item 3)
+        self.throttle = markets.Throttle(gap=markets.home_gap())   # one polite pace for every marketplace (item 3)
 
     # ---- steps ---------------------------------------------------------------------
     def _step(self, i, note=""):

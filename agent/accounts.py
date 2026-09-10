@@ -75,6 +75,7 @@ class Identity:
 
 
 class Accounts:
+    LOST_IDENTITIES = ("busynessai001@gmail.com",)   # mailboxes we no longer have (banned 2026-09-10): accounts made with them are unreachable
     notify_photo = None             # set by core: (jpeg_bytes, caption) → the owner's phone
 
     def __init__(self, google=None, log=None, notify=None, ask=None):
@@ -84,6 +85,53 @@ class Accounts:
         self.notify = notify or (lambda t: None)
         self.ask = ask                                              # callable(question, options, timeout) -> label|None
         self.data = self._load()
+        from .idmail import IdMail
+        self.mail = IdMail(log=self.log)                            # plain IMAP, read-only: where verification codes arrive
+        self._retire_lost()
+
+    def _retire_lost(self):
+        """Accounts created with a mailbox we lost are marked so they are never logged into or re-used."""
+        changed = False
+        for a in self.data.get("accounts", []):
+            if a.get("email") in self.LOST_IDENTITIES and a.get("status") != "lost":
+                a["status"] = "lost"; a["note"] = "mailbox banned — account unreachable; a new one is made with the current identity"; changed = True
+        if changed:
+            self._save()
+
+    def mail_ok(self):
+        """Can I receive verification codes right now? IMAP mailbox first, the old Google path only if it still works."""
+        if self.mail.configured():
+            return True
+        return bool(self.google and self.google.connected())
+
+    def _find_code(self, hint, tries=8, wait=15):
+        local = self.is_local(f"http://{hint}/") or hint in ("127", "localhost")
+        if local:                                                   # my own practice stages: their codes come through the stage's fake mail, never the real mailbox
+            mb = getattr(self, "mailbox", None)
+            if mb:
+                return mb.code(hint, tries=2, wait=1)
+            if self.google and self.google.connected():
+                return self.google.find_code(sender_hint=hint, tries=2, wait=1)
+            return None, None
+        if self.mail.configured():
+            return self.mail.find_code(sender_hint=hint, tries=tries, wait=wait)
+        mb = getattr(self, "mailbox", None)
+        if mb:
+            return mb.code(hint, tries=tries, wait=wait)
+        if self.google and self.google.connected():
+            return self.google.find_code(sender_hint=hint, tries=tries, wait=wait)
+        return None, None
+
+    def _find_link(self, hint, tries=3, wait=15):
+        if self.is_local(f"http://{hint}/") or hint in ("127", "localhost"):
+            if self.google and self.google.connected():
+                return self.google.find_link(sender_hint=hint, tries=1, wait=0)
+            return None, None
+        if self.mail.configured():
+            return self.mail.find_link(sender_hint=hint, tries=tries, wait=wait)
+        if self.google and self.google.connected():
+            return self.google.find_link(sender_hint=hint, tries=tries, wait=wait)
+        return None, None
 
     # ---- memory of accounts -----------------------------------------------------------
     def _load(self):
@@ -110,7 +158,7 @@ class Accounts:
 
     def known(self, url):
         site = self.site_of(url)
-        return next((a for a in self.data["accounts"] if a["site"] == site), None)
+        return next((a for a in self.data["accounts"] if a["site"] == site and a.get("status") != "lost"), None)
 
     # ---- safe sign-up: fakes first, real sites only when approved (item 6) --------------------------
     def is_local(self, url):
@@ -168,10 +216,11 @@ class Accounts:
         self.log("account", site=site, status=status)
 
     def list_text(self):
+        head = self.id.describe() + "\n" + self.mail.describe()
         if not self.data["accounts"]:
-            return self.id.describe() + "\nNo site accounts yet — I create them when a task needs one (you get one line when I do)."
+            return head + "\nNo site accounts yet — I create them when a task needs one (you get one line when I do)."
         rows = "\n".join(f"• {a['site']} — {a['status']} ({a['t']})" + (f" · {a['note']}" if a.get("note") else "") for a in self.data["accounts"][-20:])
-        out = f"{self.id.describe()}\nSites where I have an account:\n{rows}"
+        out = f"{head}\nSites where I have an account:\n{rows}"
         if self.data.get("approved"):
             out += "\nApproved for sign-up: " + ", ".join(self.data["approved"])
         return out
@@ -383,14 +432,14 @@ class Accounts:
 
     # ---- e-mail codes / links --------------------------------------------------------------------
     def enter_code(self, b, site):
-        """Fetch the fresh code from my Gmail and type it in; True on success."""
-        if not (self.google and self.google.connected()):
-            self.log("code_needed_no_gmail", site=site)
+        """Fetch the fresh code from my mailbox (IMAP) and type it in; True on success."""
+        if not self.mail_ok():
+            self.log("code_needed_no_mailbox", site=site)
             return False
-        mb = getattr(self, "mailbox", None)                              # item G: the Verification pile first, then the general search
-        code, mail = (mb.code(site.split(".")[0], tries=8, wait=15) if mb else self.google.find_code(sender_hint=site.split(".")[0], tries=8, wait=15))
+        hint = site.split(".")[0]
+        code, mail = self._find_code(hint, tries=8, wait=15)
         if not code:
-            link, mail = self.google.find_link(sender_hint=site.split(".")[0], tries=2, wait=10)
+            link, mail = self._find_link(hint, tries=2, wait=10)
             if link:
                 b.open(link)
                 return True
@@ -412,9 +461,9 @@ class Accounts:
 
     def check_confirmation_mail(self, b, site):
         """After a sign-up, open the confirmation link if one arrives (does not block long)."""
-        if not (self.google and self.google.connected()):
+        if not self.mail_ok():
             return False
-        link, mail = self.google.find_link(sender_hint=site.split(".")[0], tries=3, wait=15)
+        link, mail = self._find_link(site.split(".")[0], tries=2, wait=10)
         if link:
             try:
                 b.open(link)

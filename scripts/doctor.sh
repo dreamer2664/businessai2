@@ -81,7 +81,7 @@ then
   python3 -m playwright install chromium-headless-shell 2>&1 | tail -1
   python3 -m playwright install-deps chromium 2>&1 | tail -1
 fi
-echo "--- selfcheck (keys, brain, browser, walls memory, model, google) ---"
+echo "--- selfcheck (keys, brain, browser, walls memory, model, mailbox, google) ---"
 python3 -m agent.selfcheck 2>&1 | grep -v Warning | tail -9
 
 # 4. (re)start the bot

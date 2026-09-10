@@ -417,3 +417,27 @@ What was built, and why it differs:
   time-out (`/risk/action/limit`) after the day's probing — reported honestly; on the PC's home address it should show the puzzle
   → owner tap path. A local fake shop in score_deals proves the whole loop end to end (puzzle → picture → tap → re-check → results).
 - score_accounts 18 → 24 (budget, 5-then-stop, other site unaffected, picture sent, session file); score_deals 54 → 57.
+
+## 2026-09-10 — the Google account was banned → identity mailbox over plain IMAP; Google is optional from now on — done
+- What happened: busynessai001@gmail.com (the bot's identity + the OAuth client's owner) was disabled by Google, then banned.
+  Pattern: a fresh phone-less account with a Cloud project, Drive/Docs/Gmail API calls from two IPs within hours, a mailbox
+  tidy every 15 min. Then the owner's home IP got a "verify you are human" loop on GMX, mail.com and Libero sign-ups — the
+  day's marketplace probing from that address (11 sites in a row, seller checks, Shein/Temu tests) had flagged it.
+- New identity: the owner's spare Gmail (spamcarlo019@gmail.com, a year old, used for newsletters) read over **plain IMAP with
+  an app password** — no Google API, no OAuth client, nothing to "disable". `agent/idmail.py`: read-only (BODY.PEEK, never
+  marks/moves/deletes/sends), only fresh mail, only mail that looks like a service's verification mail (`looks_like_verification`:
+  a person's "codice porta 5544" is never read), optional alias filter (BAI_MAIL_ALIAS: only mail TO the alias), one login per
+  lookup, spaced polls. Hosts guessed from the address (gmail, libero, gmx, mail.com, outlook, icloud, aruba, tiscali …).
+- accounts.py: `Identity.email` = the alias when set, else BAI_ACCOUNT_EMAIL; codes/links via `Accounts._find_code/_find_link`
+  → IMAP first, Google only if it still works; `LOST_IDENTITIES` retires accounts made with the banned mailbox (status "lost",
+  never "known" again → a fresh sign-up with the new identity); `/accounts` shows both identities.
+- google.py: a dead token is remembered in the token file (`dead`, `dead_note`) so a restart does not hammer it again; a
+  successful reconnect writes a fresh token and clears it. selfcheck: "google (optional): token dead — …" (a real refresh is
+  tried; "connected" no longer means "a token file exists"); new "identity mailbox: … login ok, N messages" line.
+- New: `scripts/set_mail.sh <address> <base64 app-password> [imap host]` (PowerShell-safe), `/mail` (is the mailbox reachable),
+  doctor v7 mentions the mailbox.
+- **Polite browsing on a home address** (`markets.home_gap()`): 12 s between hits on one host at home (4 s only in the sandbox,
+  BAI_PACE overrides); `/markets` probes the owner's six sites with pauses, refuses to repeat within 6 h ('/markets force'),
+  '/markets all' for the rest. Rule: the owner's IP reputation is shared with their own browsing — never burst.
+- New suite engine/scripts/score_idmail.py (18 checks, fake IMAP server over TLS: login, fresh-only, code/link extraction,
+  read-only commands, alias filter, Gmail app-password hint, host guesses, lost identity retired, codes via IMAP without Google).

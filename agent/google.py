@@ -74,6 +74,11 @@ class Google:
             elif TOKEN_BACKUP.exists():
                 self.token = json.loads(TOKEN_BACKUP.read_text())
                 self._save_token()
+            if self.token.get("dead"):                                   # remembered across restarts: the token is known-dead, don't pretend
+                self._dead_token = self.token.get("refresh_token")
+                self.needs_reconnect = True
+                self.client_disabled = self.token.get("dead") == "disabled_client"
+                self.last_error = self.token.get("dead_note") or "Google connection is dead — say 'connect google' to link again"
         except Exception as e:
             self.last_error = f"could not read Google files: {e}"
         try:
@@ -91,13 +96,24 @@ class Google:
     def has_client(self):
         return bool(self.client and self.client.get("client_id") and self.client.get("client_secret"))
 
+    def _sync_dead(self):
+        """The dead marker belongs to ONE token: if the token was replaced (a reconnect, or a test), the flags go with it."""
+        dead = getattr(self, "_dead_token", None)
+        if dead and self.token.get("refresh_token") != dead:
+            self._dead_token = None
+            self.needs_reconnect = False
+            self.client_disabled = False
+            self.last_error = ""
+
     def connected(self):
+        self._sync_dead()
         return self.has_client() and bool(self.token.get("refresh_token")) and not self.needs_reconnect
 
     def account(self):
         return self.token.get("email", "")
 
     def status(self):
+        self._sync_dead()
         if not self.has_client():
             return ("Google: not set up. Put the OAuth client file from Google Cloud at .secrets/google_client.json "
                     "(Console → Google Auth Platform → Clients → Desktop app → Download JSON).")
@@ -239,6 +255,19 @@ class Google:
         finally:
             self._close_pending()
 
+    def _mark_dead(self, why):
+        """Write the failure into the token file so a restart does not start hammering a dead token again
+        (only when this token IS the one on disk — a test stub with its own token never touches the file)."""
+        try:
+            on_disk = json.loads(TOKEN_FILE.read_text()) if TOKEN_FILE.exists() else {}
+            if on_disk.get("refresh_token") != self.token.get("refresh_token"):
+                return
+            self.token["dead"] = why
+            self.token["dead_note"] = self.last_error
+            self._save_token()
+        except Exception:
+            pass
+
     def _save_token(self):
         TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
         TOKEN_FILE.write_text(json.dumps(self.token))
@@ -249,6 +278,7 @@ class Google:
             pass
 
     def _access_token(self):
+        self._sync_dead()
         with self._lock:
             if self.access and time.time() < self.access_until:
                 return self.access
@@ -268,10 +298,12 @@ class Google:
                                        "won't help: open console.cloud.google.com → Google Auth Platform → Clients, re-enable the client "
                                        "(or make a new Desktop-app client and give me its JSON), then say 'connect google'.")
                     self.log("google_client_disabled")
+                    self._mark_dead("disabled_client")
                 elif "invalid_grant" in str(e) or "invalid_client" in str(e):
                     self.needs_reconnect = True
                     self.last_error = "Google dropped the connection (7-day limit for private apps)"
                     self.log("google_needs_reconnect")
+                    self._mark_dead("invalid_grant")
                 raise
             self.access, self.access_until = d["access_token"], time.time() + int(d.get("expires_in", 3600)) - 60
             return self.access

@@ -49,9 +49,26 @@ try:
 except Exception as e:
     print("- thinking model:", str(e)[:80])
 try:
+    from .idmail import IdMail
+    m = IdMail()
+    if not m.configured():
+        print("- identity mailbox: not set (BAI_ACCOUNT_EMAIL + BAI_MAIL_PASSWORD in .secrets/env) → sign-ups cannot receive codes")
+    else:
+        good, note = m.check()
+        print(("v" if good else "-") + f" identity mailbox: {m.address()} — {note}")
+except Exception as e:
+    print("- identity mailbox:", str(e)[:80])
+try:
     from .google import Google
     g = Google()
-    print(("v" if g.connected() else "-") + " google: " + ("connected" if g.connected() else "not connected on this machine → send `connect google` to the bot"))
+    if g.connected():
+        try:
+            g._access_token()                                           # a real refresh: "connected" must mean it works, not "a token file exists"
+            print("v google (optional): connected")
+        except Exception as e:
+            print("- google (optional): token dead — " + str(e)[:90])
+    else:
+        print("- google (optional): not connected" + (" — " + g.last_error[:90] if getattr(g, "last_error", "") else " (Docs/Drive links off; everything else works)"))
 except Exception as e:
-    print("- google:", str(e)[:80])
+    print("- google (optional):", str(e)[:80])
 sys.exit(0 if ok else 1)

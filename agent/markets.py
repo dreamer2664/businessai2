@@ -766,7 +766,17 @@ def proxy_config():
 
 # ---- polite marketplace crawling (runs on the hands thread) --------------------------------------
 
-THROTTLE = Throttle()
+def home_gap():
+    """Seconds between hits on one host. A home connection is the owner's own address — its reputation is shared with their
+    own browsing and every sign-up they will ever do, so it is treated far more gently than a throwaway sandbox (2026-09-10:
+    a day of probing got the owner's IP a 'verify you are human' loop on every mail provider). BAI_PACE=home|sandbox."""
+    mode = os.environ.get("BAI_PACE", "").lower()
+    if not mode:
+        mode = "sandbox" if os.environ.get("BAI_STATE", "").startswith("/tmp/") else "home"
+    return 4.0 if mode == "sandbox" else 12.0
+
+
+THROTTLE = Throttle(gap=home_gap())
 
 SEARCH = {"vinted": (vinted_search_url, parse_vinted_search), "subito": (subito_search_url, parse_subito_search)}
 ITEM = {"vinted": parse_vinted_item, "subito": parse_subito_item}

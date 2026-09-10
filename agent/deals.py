@@ -209,7 +209,7 @@ class DealHunter:
         self.log = log or (lambda kind, **f: None)
         self.viewer = viewer
         self.pace = pace
-        self.throttle = markets.Throttle()
+        self.throttle = markets.Throttle(gap=markets.home_gap())
 
     def _step(self, i, note=""):
         if self.viewer:
@@ -762,11 +762,17 @@ def generic_cards(b, site, limit=8):
 PROBE_ITEM = {"name": "nintendo switch", "max": None}
 
 
+PROBE_SITES_HOME = ("vinted", "subito", "temu", "shein", "banggood", "dhgate")     # the owner's list; the rest only on request ("/markets all")
+
+
 def probe_sites(hunter, sites=("vinted", "subito", "wallapop", "ebay", "banggood", "dhgate", "shein", "temu", "aliexpress", "amazon", "facebook marketplace")):
-    """Try one real search per site (read-only) and say what happened, in the owner's words. Runs on the hands thread."""
+    """Try one real search per site (read-only) and say what happened, in the owner's words. Runs on the hands thread.
+    Gentle: a pause between sites — eleven shops in a minute from a home address is what a bot looks like."""
     lines = []
     with hunter.T._session() as b:
-        for s in sites:
+        for i, s in enumerate(sites):
+            if i:
+                time.sleep(markets.home_gap())
             t = time.time()
             try:
                 cards, note = hunter.search_site(b, s, PROBE_ITEM, limit=5, depth=1)

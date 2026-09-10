@@ -128,3 +128,13 @@ Reality check on 2026-09-09 with the real browser:
   Temu shows a picture puzzle at sign-up too → same one-tap flow. To do it now, on purpose: send **/accounts signup temu** and watch
   the Chrome window; the verification code comes from the project Gmail by itself.
 - If you still want the Gmail password reused or the credentials in the repo, say so explicitly and I'll do it — but I'd advise against both.
+
+## 2026-09-10 — after the Google ban: how the bot's e-mail works now
+- The bot no longer *has* a Google account. It uses **your spare Gmail (spamcarlo019)** the way a mail app does: plain IMAP,
+  read-only, with an **app password** — it never calls Google's APIs, never sends, never deletes, and only ever reads fresh
+  verification mails from services (a mail from a person is never read). That is why this cannot repeat the ban.
+- Set it once on the PC (the password is base64 so PowerShell cannot mangle it) — see the chat for the exact line.
+- `/mail` in Telegram tells you if the mailbox is reachable. `/accounts` shows the identity. Google Docs/Drive links are off
+  until/unless a Google account is connected again (the HTML/PDF document on Telegram is the deliverable).
+- Your home address got flagged today because the bot probed many shops in a row. It now browses gently at home (12 s between
+  hits on a site, `/markets` at most every 6 h). If a sign-up form gives you endless CAPTCHAs, use the phone on 4G.

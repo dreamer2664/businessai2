@@ -88,7 +88,7 @@ Forward me any customer message (or write /customer <their text>) → I draft th
 "rehearse posting about <topic>" — a dry run on my own practice network: log in, publish with photo, learn the limits, answer comments (nothing public) · /rehearse map — what I learned about each interface
 "build a website for <a place>" — I write the copy, build the pages, check them in my browser and send you the files · "start auto training on website building" — I practise on random real places from the map (watch it live) · "stop training"
 while I work: "status" / "what are you doing" · "why" · "hurry up" · "stop" · a change ("only Italy") · a new request (queued) — no need to wait
-/lessons — what I learned from my last jobs (I reflect after every one) · /thinking — what is on my mind right now · /disk [clean] — space on my machine · /walls [forget [site]] — sites that blocked me lately (I put them last) · /markets — which marketplaces I can search from this machine right now
+/lessons — what I learned from my last jobs (I reflect after every one) · /thinking — what is on my mind right now · /disk [clean] — space on my machine · /walls [forget [site]] — sites that blocked me lately (I put them last) · /markets — which marketplaces I can search from this machine right now · /mail — is my identity mailbox (IMAP) reachable
 /ideas — business ideas I jotted from short videos (/ideas <topic> = go watch some now) · /study [topic] — find and keep a good PDF in my library
 /accounts — the site accounts I created with my own e-mail (I sign up when a task needs it and tell you in one line; never money sites) · /accounts allow <site>
 /library — the documents I've written (seller checks, research, comparisons); they also land in my Drive folder · /progress — today's log in Google Docs (every job writes there as it goes; long jobs get their own page) · /projects — the ideas I'm working on in free windows ('new project: …' adds one) · /mail — my inbox sorted into Verification / Leads / Alerts / Newsletters ('tidy the inbox' now, 'any leads?')
@@ -1116,21 +1116,34 @@ class Agent:
         if re.fullmatch(r"\W*(what|which|who) are you watching\??\W*|\W*(are you )?(still )?watching( the (sites|marketplaces|deals))?\??\W*|\W*cosa stai (controllando|guardando)\??\W*", low):
             w = getattr(self, "watch", None)
             return w.status() if w else "I'm not watching any marketplace right now — a deal hunt with a time floor ('take 5-6 hours') starts one after the first document."
+        if low.startswith("/mail") and not low.startswith("/mailbox"):
+            m = self.accounts.mail
+            if not m.configured():
+                return ("📮 Identity mailbox: not set. On the PC: sh scripts/set_mail.sh <address> <base64 app-password> — then codes for sign-ups arrive by IMAP. "
+                        "(Google Docs/Drive stay optional.)")
+            good, note = m.check()
+            return ("✅" if good else "❌") + f" Identity mailbox {m.address()} via IMAP {m.host}: {note}" + ("" if good else "\nUntil it works I cannot receive verification codes, so no new sign-ups.")
         if low.startswith("/markets") or re.fullmatch(r"\W*(which|what) (marketplaces?|shops?|sites?) can you (search|read|use)( right now| from here| for me)?\??\W*", low):
-            from .deals import probe_sites
+            from .deals import probe_sites, PROBE_SITES_HOME
             if self.busy:
                 return f"I'm on: {self.busy} — ask again when it's done, the probe needs the browser."
+            last = getattr(self, "_last_probe", 0)
+            if time.time() - last < 6 * 3600 and "all" not in low and "force" not in low:
+                return "I probed the marketplaces less than 6 hours ago — repeating it often is exactly what gets a home address flagged. Say '/markets force' if you really need it now."
+            self._last_probe = time.time()
+            which = None if ("all" in low) else PROBE_SITES_HOME
             def go():
                 self.busy = "probing the marketplaces"
                 try:
-                    out = self.tasks.on_hands(probe_sites, self.deals, timeout=600)
+                    out = self.tasks.on_hands(probe_sites, self.deals, *([which] if which else []), timeout=900)
                 except Exception as e:
                     out = f"The probe failed: {str(e)[:120]}"
                 finally:
                     self.busy = None
                 self.bot.send(self.owner_id, out)
             threading.Thread(target=go, daemon=True).start()
-            return "🛒 Trying one real search on each marketplace (Vinted, Subito, Wallapop, eBay, Banggood, DHgate, Shein, Temu, AliExpress, Amazon, Facebook) — about 2 minutes, the list comes here."
+            return ("🛒 Trying one real search on each of your marketplaces (Vinted, Subito, Temu, Shein, Banggood, DHgate), gently spaced — about 2–3 minutes, the list comes here. ('/markets all' adds Wallapop, eBay, AliExpress, Amazon, Facebook.)" if which else
+                    "🛒 Trying one real search on all eleven marketplaces, gently spaced — about 4 minutes, the list comes here.")
         if low.startswith("/ideas"):
             arg = text[6:].strip()
             if arg:
