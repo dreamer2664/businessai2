@@ -9,11 +9,12 @@ Sites: vinted + subito have deep readers (markets.py). wallapop / temu / shein /
 their public search pages; when a site walls this machine (Cloudflare, login, 403) the section says so in one line
 and the item still gets its deals from the sites that answered. Facebook Marketplace needs a login → never opened.
 """
+import json
 import re
 import time
 import urllib.parse
 
-from . import markets
+from . import config, markets
 from .browser import BrowserError
 from .library import Doc
 
@@ -33,18 +34,79 @@ NO_LOGIN = {"facebook marketplace": "needs a Facebook login — I never log in b
             "temu": "sends visitors to a login page before any search — nothing to read without an account"}
 
 
+# an item name that alone gives useless results: a whole family (which model? which size?) — one question per list, not per item
+VAGUE = {
+    "iphone": "which model (e.g. iPhone 12, 13, 15 Pro) and storage?", "samsung": "which model (e.g. Galaxy S23, A54)?", "galaxy": "which Galaxy model?",
+    "phone": "which brand and model?", "telefono": "quale marca e modello?", "smartphone": "which brand and model?", "cellulare": "quale marca e modello?",
+    "laptop": "which brand/model, or at least screen size and budget?", "notebook": "which brand/model, or at least screen size and budget?", "pc": "desktop or laptop, which specs or budget?", "computer": "desktop or laptop, which specs or budget?",
+    "macbook": "Air or Pro, which year/size?", "ipad": "which iPad (Air, Pro, mini) and size?", "tablet": "which brand/model or size?",
+    "tv": "which size (inches) and budget?", "televisore": "quanti pollici e che budget?", "monitor": "which size and use (gaming/office)?",
+    "bike": "city, road, mountain or e-bike, and frame size?", "bici": "città, corsa, mountain bike o elettrica, e che taglia?", "bicicletta": "città, corsa, mountain bike o elettrica, e che taglia?",
+    "scooter": "electric kick scooter or a moped, which model?", "monopattino": "quale modello o budget?",
+    "console": "which console (PS5, Switch, Xbox)?", "playstation": "which PlayStation (4, 4 Pro, 5)?", "xbox": "which Xbox (One, Series S, Series X)?", "nintendo": "which Nintendo (Switch, Switch Lite, OLED)?",
+    "camera": "which brand/model or type (mirrorless, compact, action)?", "fotocamera": "quale marca/modello o tipo?", "drone": "which model or budget?",
+    "watch": "which brand/model?", "orologio": "quale marca/modello?", "smartwatch": "which one (Apple Watch series, Galaxy Watch…)?", "airpods": "which AirPods (2, 3, Pro, Pro 2)?", "cuffie": "quale marca/modello?", "headphones": "which brand/model?",
+    "shoes": "which brand/model and size?", "scarpe": "quale marca/modello e numero?", "sneakers": "which model and size?", "jacket": "which brand, size?", "giacca": "quale marca, taglia?",
+    "car": "I only search used-goods marketplaces — for cars say make, model, year and budget", "auto": "cerco solo sui marketplace dell'usato — per le auto dimmi marca, modello, anno e budget", "macchina": "marca, modello, anno e budget?",
+    "sofa": "which size (2/3 seats, corner) and budget?", "divano": "quanti posti e che budget?", "fridge": "which size/type and budget?", "frigo": "che dimensioni e budget?", "washing machine": "which load (kg) and budget?", "lavatrice": "quanti kg e che budget?",
+    "dyson": "which Dyson (V8, V11, V15, Airwrap…)?", "gopro": "which GoPro (Hero 9, 10, 11, 12)?", "kindle": "which Kindle (basic, Paperwhite, Oasis)?", "lego": "which set (number or name)?",
+}
+
+
+def vague_items(items):
+    """Items whose name is only a family word → [(name, question)]; specific names pass ('iphone 12', 'dyson v8')."""
+    out = []
+    for it in items:
+        w = item_words(it["name"])
+        key = " ".join(w)
+        if key in VAGUE or (len(w) == 1 and w[0] in VAGUE):
+            out.append((it["name"], VAGUE.get(key) or VAGUE[w[0]]))
+        elif len(w) == 2 and w[0] in VAGUE and w[1] in ("usato", "used", "nuovo", "new", "economico", "cheap"):
+            out.append((it["name"], VAGUE[w[0]]))
+    return out
+
+
 def item_words(name):
-    return [w for w in re.findall(r"[a-z0-9]+", name.lower()) if len(w) > 1 and w not in ("the", "and", "con", "per", "for", "with", "usato", "used")]
+    return [w for w in re.findall(r"[a-z0-9]+", name.lower()) if len(w) > 1 and w not in ("the", "and", "con", "per", "for", "with", "usato", "usata", "used", "un", "una", "uno")]
+
+
+SOFT = re.compile(r"^(\d{2,4}gb|\d{1,2}tb|\d{2,3}cm|\d{2}|taglia|size|tg|colore|colou?r|nero|bianco|black|white|blu|blue|rosso|red|verde|green|grigio|grey|gray|"
+                  r"da|di|a|il|la|le|lo|gli|of|in|corsa|città|city|mtb|elettrica|electric|usato|usata|used|nuovo|nuova|new|ottimo|buono)$", re.I)   # details, not the identity
+
+
+SYNONYMS = {"bici": ("bicicletta", "bike", "mtb"), "bicicletta": ("bici", "bike"), "bike": ("bici", "bicicletta"), "tv": ("televisore", "televisione", "smart tv"),
+            "televisore": ("tv",), "frigo": ("frigorifero",), "lavatrice": ("lavabiancheria",), "pc": ("computer", "desktop"), "portatile": ("laptop", "notebook"),
+            "laptop": ("portatile", "notebook"), "cuffie": ("headphones", "auricolari"), "scarpe": ("sneakers", "shoes"), "orologio": ("watch",), "cellulare": ("smartphone", "telefono"),
+            "telefono": ("smartphone", "cellulare"), "zaino": ("backpack",), "divano": ("sofa", "sofà"), "giacca": ("jacket", "giubbotto"), "controller": ("joystick", "pad", "dualshock", "dualsense", "gamepad"),
+            "aspirapolvere": ("scopa elettrica", "vacuum"), "monopattino": ("scooter",), "macchina fotografica": ("fotocamera",), "fotocamera": ("camera", "macchina fotografica")}
+
+
+def _has(word, title):
+    if re.search(r"(?<![a-z0-9])" + re.escape(word) + r"(?![a-z0-9])", title):
+        return True
+    return any(re.search(r"(?<![a-z0-9])" + re.escape(syn) + r"(?![a-z0-9])", title) for syn in SYNONYMS.get(word, ()))
 
 
 def matches(card, name):
-    """The card is about the item: every word of the item's name appears in the title (numbers must match exactly)."""
+    """The card is about the item: the identity words of the item's name appear in the title (model numbers exactly);
+    details like storage, size, colour, 'da corsa' are soft — they help ranking, never exclude."""
     title = (card.get("title") or "").lower()
     words = item_words(name)
     if not words:
         return True
-    hit = sum(1 for w in words if re.search(r"(?<![a-z0-9])" + re.escape(w) + r"(?![a-z0-9])", title))
-    return hit >= max(1, len(words) - (1 if len(words) >= 3 else 0))
+    core_w = []
+    for i, w in enumerate(words):
+        prev = words[i - 1] if i else ""
+        if re.fullmatch(r"\d{2}", w) and prev in ("taglia", "size", "tg", "numero", "n", "eu", "cm") or (SOFT.match(w) and not re.fullmatch(r"\d{1,2}", w)):
+            continue                                                  # "taglia 54" is a detail; a bare "13" after "iphone" is the model
+        core_w.append(w)
+    core_w = core_w or words[:2]
+    hit = sum(1 for w in core_w if _has(w, title))
+    # a model number in the name must be in the title ("iphone 13" never matches "iPhone 12"), whatever the other words
+    for w in core_w:
+        if re.fullmatch(r"\d{1,2}[a-z]?|[a-z]\d{1,2}", w) and not re.search(r"(?<![a-z0-9])" + re.escape(w) + r"(?![a-z0-9])", title):
+            return False
+    return hit >= max(1, len(core_w) - (1 if len(core_w) >= 3 else 0))
 
 
 VARIANT = re.compile(r"\b(lite|mini|go|nano|se|compact|junior|kids?|slim|pocket|air|neo|core)\b", re.I)   # a cheaper sibling model
@@ -373,22 +435,71 @@ class DealHunter:
 
 
 # ---- watching (the time floor on a shopping list) ---------------------------------------------------------------
+WATCH_FILE = config.STATE_DIR / "watch.json"
+
+
 class Watcher:
     """Re-checks the marketplaces for the owner's items: newest listings + cheapest-first, remembers what it has seen,
-    and speaks only when a new listing beats the current best for an item (same rules: match, cap, penalties)."""
+    and speaks only when a new listing beats the current best for an item (same rules: match, cap, penalties).
+    Saved to state/watch.json after every round, so a restart of the bot resumes the watch instead of forgetting it."""
 
-    def __init__(self, hunter, items, sites, results=None):
+    def __init__(self, hunter, items, sites, results=None, until=None):
         self.h = hunter
         self.items = items
         self.sites = [s for s in (sites or ("vinted", "subito")) if s in markets.SEARCH] or ["vinted", "subito"]
         self.best = {}
         self.seen = set()
+        self.until = until
+        self.started = time.time()
         for r in results or []:
             if r.get("best"):
                 self.best[r["item"]["name"]] = r["best"][0]
             for c in r.get("best") or []:
                 self.seen.add(c["url"])
         self.rounds = 0
+        self.found = 0
+
+    # ---- persistence -----------------------------------------------------------------
+    def save(self):
+        try:
+            WATCH_FILE.parent.mkdir(parents=True, exist_ok=True)
+            best = {k: {kk: vv for kk, vv in v.items() if kk not in ("image", "facts")} for k, v in self.best.items()}
+            WATCH_FILE.write_text(json.dumps({"items": self.items, "sites": self.sites, "best": best, "seen": sorted(self.seen)[-2000:],
+                                              "until": self.until, "started": self.started, "rounds": self.rounds, "found": self.found}, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
+
+    @classmethod
+    def load(cls, hunter):
+        """The saved watch, or None when there is none / it is over."""
+        try:
+            d = json.loads(WATCH_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        if not d.get("items") or not d.get("until") or d["until"] <= time.time():
+            return None
+        w = cls(hunter, d["items"], d.get("sites"), until=d["until"])
+        w.best = d.get("best") or {}
+        w.seen = set(d.get("seen") or [])
+        w.started = d.get("started") or time.time()
+        w.rounds = int(d.get("rounds") or 0)
+        w.found = int(d.get("found") or 0)
+        return w
+
+    @staticmethod
+    def clear():
+        try:
+            WATCH_FILE.unlink()
+        except Exception:
+            pass
+
+    def left(self):
+        return max(0, int((self.until or 0) - time.time()))
+
+    def status(self):
+        names = ", ".join(i["name"] for i in self.items)
+        return (f"👀 Watching {', '.join(self.sites)} for {names} — {self.left() // 3600} h {self.left() % 3600 // 60} min left, "
+                f"{self.rounds} round(s) so far, {self.found} better deal(s) found. Say 'stop watching' to end it.")
 
     def round(self):
         """One pass over items × sites. Returns (messages for the owner, one log line)."""
@@ -421,6 +532,8 @@ class Watcher:
                                 self.best[it["name"]] = c
                                 better.append(f"🔔 Better deal for {it['name']}: {DealHunter._line(c)}\n{c['url']}")
         self.h.T._release_page()
+        self.found += len(better)
+        self.save()
         line = f"watch round {self.rounds}: {checked} result page(s) re-checked, {len(better)} better deal(s)"
         return better, line
 
@@ -428,8 +541,10 @@ class Watcher:
 DealHunter.WATCH_EVERY = 900          # seconds between watch rounds (15 min): polite to the sites, fresh enough for used goods
 
 
-def _watcher(self, items, sites, results=None):
-    return Watcher(self, items, sites, results)
+def _watcher(self, items, sites, results=None, until=None):
+    w = Watcher(self, items, sites, results, until=until)
+    w.save()
+    return w
 
 
 DealHunter.watcher = _watcher

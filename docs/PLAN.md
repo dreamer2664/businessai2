@@ -359,3 +359,17 @@ VERSION 2.0 (2026-09-08): the shop grows extras and a designer — discount code
   from a shop (shipped from China, 1–4 weeks)"; $/£ shown when a shop prices in them.
 - New suite engine/scripts/score_deals.py: 35 checks (matching, ranking, placeholders, list flow, summary/document, depth,
   watcher rounds, + a live Vinted/Subito run). Pace range floor accepts minutes ≥ 2 ("take around 4-5 minutes").
+
+## 2026-09-10 (owner away, round 2) — vague items ask once; the watch survives a restart — done
+- `deals.vague_items()`: a list line that is only a family word (iphone, samsung, tv, bici, dyson, console, scarpe, auto …; en+it,
+  ~60 entries) gets one question ("which model and storage?"). core: the list arrives → one message with all the questions
+  ("Answer in one message, one line per item, or say 'go anyway'"); the answers replace the vague names, specific items are kept.
+- `deals.matches()`: identity words vs soft details — storage (128gb), size ("taglia 54"), colour, "da corsa" never exclude a
+  card; a model number in the name must be in the title ("iphone 13" ≠ iPhone 12, "air max 90" ≠ 97); Italian synonyms
+  (bici/bicicletta/bike, tv/televisore, controller/joystick/dualshock …).
+- `deals.Watcher` persists to state/watch.json after every round (items, sites, best per item, seen urls, until, rounds, found).
+  `Agent.watch_tick()` (from idle_work) reloads it once after a restart ("👀 I'm back — resuming…"), runs a round every 15 min
+  while idle, closes it when the time is up. "what are you watching?" → status line; "stop watching" → ends it.
+- Verified: a fresh Agent resumes a saved watch, announces better deals, "stop watching" clears it. Banggood, AliExpress and
+  DHgate now all read from the sandbox with the Italian browser (DHgate's Cloudflare clears within the 9 s wait).
+- score_deals 35 → 43 (39 offline + 4 live).

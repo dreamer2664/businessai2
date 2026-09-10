@@ -109,3 +109,5 @@ Reality check on 2026-09-09 with the real browser:
 - It now browses as an Italian visitor (Italian pages, € prices), so fewer popups and no dollar prices.
 - New command **/markets**: one real search on each marketplace and a ✅/❌ list with the honest reason (blocked, CAPTCHA, login).
   Run it once on your PC — your home connection will get different answers than my sandbox (e.g. Wallapop/eBay may work for you).
+- (round 2) If a list line is vague ("iphone", "bici", "tv") it asks once — all questions in one message — then searches; say
+  "go anyway" to skip. The 15-minute watch now survives a bot restart; "what are you watching?" / "stop watching" work.

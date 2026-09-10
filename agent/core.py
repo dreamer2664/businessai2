@@ -176,6 +176,7 @@ class Agent:
         self.last_quiet = 0
         self.projects = _projects.Projects(log=self.log)   # item E: brainstorms + "new project: …" → steps, continued in free windows
         self._in_floor = False
+        self.watch = None                   # a running marketplace watch (deals.Watcher); saved in state/watch.json, resumed after a restart
         self.sites = SiteBuilder(planner=self.planner, tasks=self.tasks, google=self.google, log=self.log, viewer=self.viewer, eyes=self.eyes)
         self.site_training = False          # "start auto training on website building" → loop until "stop"
         self.sites_built = 0
@@ -1068,6 +1069,18 @@ class Agent:
                 self.tasks.walls.forget(site or None)
                 return f"🧱 Forgot the walls for {site}." if site else "🧱 Forgot all remembered walls — every site gets a fresh chance."
             return self.tasks.walls.text()
+        if re.fullmatch(r"\W*(stop|end|cancel|drop) (the )?watch(ing)?( the (marketplaces|sites|deals))?\W*|\W*(smetti|basta) (di )?(controllare|guardare)( i siti| gli annunci)?\W*", low):
+            w = getattr(self, "watch", None)
+            if w is None and not getattr(self, "_in_floor", False):
+                return "I'm not watching any marketplace right now."
+            from .deals import Watcher
+            Watcher.clear(); self.watch = None
+            if getattr(self, "_in_floor", False):
+                self.stop_flag = True; self.pace.stop_now()
+            return f"Okay — watch ended after {w.rounds if w else 0} round(s), {w.found if w else 0} better deal(s) found."
+        if re.fullmatch(r"\W*(what|which|who) are you watching\??\W*|\W*(are you )?(still )?watching( the (sites|marketplaces|deals))?\??\W*|\W*cosa stai (controllando|guardando)\??\W*", low):
+            w = getattr(self, "watch", None)
+            return w.status() if w else "I'm not watching any marketplace right now — a deal hunt with a time floor ('take 5-6 hours') starts one after the first document."
         if low.startswith("/markets") or re.fullmatch(r"\W*(which|what) (marketplaces?|shops?|sites?) can you (search|read|use)( right now| from here| for me)?\??\W*", low):
             from .deals import probe_sites
             if self.busy:
@@ -1324,9 +1337,32 @@ class Agent:
             return f"Got it — I'm in the middle of “{_short(self.mind.job['goal'])}”, so this is queued as #{qpos}. I start it as soon as I'm done (or say 'stop' to switch now)."
         if getattr(self, "pending_list", None) and not low.startswith("/"):
             items = self.briefer.list_items(text)
+            pend = self.pending_list
+            if items and pend.get("vague_asked") and len(items) <= len(pend["vague_asked"]) and len(text.splitlines()) <= len(pend["vague_asked"]) + 1:
+                # the answers to "which model?" → replace the vague names, keep the rest of the list
+                fixed = list(pend.get("items_so_far") or [])
+                answers = [i["name"] for i in items]
+                for old_name, new_name in zip(pend["vague_asked"], answers):
+                    for it in fixed:
+                        if it["name"] == old_name:
+                            it["name"] = new_name if not re.search(re.escape(old_name.split()[0]), new_name, re.I) or len(new_name) > len(old_name) else f"{old_name} {new_name}"
+                items = fixed
             if items:
-                b, self.pending_list = self.pending_list, None
+                from .deals import vague_items
+                vague = vague_items(items)
+                if vague and not pend.get("vague_asked"):
+                    pend["vague_asked"] = [v[0] for v in vague]
+                    pend["items_so_far"] = items
+                    qs = "\n".join(f"• {n} — {q}" for n, q in vague)
+                    return (f"Got the list ({len(items)} item{'s' if len(items) > 1 else ''}). {'One thing' if len(vague) == 1 else str(len(vague)) + ' things'} I need before I search, or the results are useless:\n{qs}\n"
+                            f"Answer in one message, one line per item (e.g. “iphone 13 128gb”), or say “go anyway” and I search the plain words.")
+                b, self.pending_list = pend, None
                 b = self.briefer.with_items(b, items)
+                self.last_brief = None
+                return self.execute(b, approved=True)
+            if pend.get("vague_asked") and re.match(r"^\W*(go anyway|go|just go|search anyway|vai|vai cos[ìi]|whatever|doesn'?t matter|non importa)\W*$", low):
+                b, self.pending_list = pend, None
+                b = self.briefer.with_items(b, pend["items_so_far"])
                 self.last_brief = None
                 return self.execute(b, approved=True)
             if re.match(r"^(no|cancel|stop|forget it|nah|annulla|lascia)\W*$", low):
@@ -2464,7 +2500,8 @@ class Agent:
         watch = None
         try:
             if deals_job:                                                  # a shopping list: the time goes into watching the marketplaces, not articles
-                watch = self.deals.watcher(b["items"], list(b.get("sites") or ()), getattr(self, "_last_deals", None))
+                watch = self.deals.watcher(b["items"], list(b.get("sites") or ()), getattr(self, "_last_deals", None), until=self.pace.floor_until)
+                self.watch = watch
                 self.bot.send(self.owner_id, f"⏬ First pass delivered. You asked for at least {_span(self.pace.floor_min)}, so I keep watching "
                                              f"{', '.join(watch.sites)} for your {len(b['items'])} item(s): every {self.deals.WATCH_EVERY // 60} min I re-check newest and cheapest "
                                              f"listings and tell you only when something beats the current best. Say 'that's enough' to close earlier.")
@@ -2554,6 +2591,9 @@ class Agent:
             except Exception as e:
                 self.log("floor_doc_failed", error=str(e)[:100])
         if deals_job:
+            from .deals import Watcher
+            Watcher.clear()
+            self.watch = None
             summary = (f"⏬ Watch closed — {why_end}. {used // 3600} h {used % 3600 // 60} min used: {len(done_angles)} re-check round(s) on the marketplaces, "
                        f"{len(project_lines)} better deal(s) found" + ("." if not project_lines else ":\n" + "\n".join("• " + x[:200] for x in project_lines[-5:])))
         else:
@@ -2648,9 +2688,48 @@ class Agent:
         except Exception as e:
             self.log("clock_tick_failed", error=str(e)[:80])
 
+    def watch_tick(self):
+        """A saved marketplace watch (from before a restart) keeps going between messages: one round every WATCH_EVERY."""
+        w = getattr(self, "watch", None)
+        if w is None and not getattr(self, "_watch_checked", False):
+            self._watch_checked = True
+            from .deals import Watcher
+            w = Watcher.load(self.deals)
+            if w is not None:
+                self.watch = w
+                self.log("watch_resumed", items=len(w.items), left_s=w.left())
+                self.bot.send(self.owner_id, "👀 I'm back — resuming the marketplace watch from before the restart: " + w.status())
+        if w is None or self.busy or getattr(self, "_in_floor", False):
+            return
+        if w.left() <= 0:
+            self.watch = None
+            from .deals import Watcher
+            Watcher.clear()
+            self.bot.send(self.owner_id, f"⏬ Watch over — {w.rounds} round(s), {w.found} better deal(s) found in total.")
+            return
+        if time.time() - getattr(self, "_watch_last", 0) < self.deals.WATCH_EVERY:
+            return
+        self._watch_last = time.time()
+        def go():
+            self.busy = f"watching the marketplaces ({', '.join(i['name'] for i in w.items)[:40]})"
+            try:
+                better, line = self.tasks.on_hands(w.round, timeout=900)
+                self.log("watch_round", text=line[:120])
+                for m in better:
+                    self.bot.send(self.owner_id, m)
+            except Exception as e:
+                self.log("watch_round_failed", error=str(e)[:100])
+            finally:
+                self.busy = None
+        threading.Thread(target=go, daemon=True).start()
+
     def idle_work(self):
         """Between messages: one self-study session when a learning goal is waiting, and the daily report at 20:00."""
         now = time.time()
+        try:
+            self.watch_tick()
+        except Exception as e:
+            self.log("watch_tick_failed", error=str(e)[:80])
         if self.busy or now - self.last_idle_check < 60:
             return
         self.last_idle_check = now

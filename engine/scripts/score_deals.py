@@ -20,6 +20,11 @@ check("'Nintendo Switch Lite' matches", D.matches({"title": "Nintendo Switch Lit
 check("3-word item tolerates one missing word", D.matches({"title": "Dyson V8 aspirapolvere"}, "dyson v8 absolute"))
 check("numbers must match: 'ps5 controller' ≠ 'ps4 controller'", not D.matches({"title": "Controller PS5 DualSense"}, "ps4 controller"))
 check("'iphone 12' ≠ 'iphone 13'", not D.matches({"title": "iPhone 13 128GB"}, "iphone 12"))
+check("details are soft: 'iphone 13 128gb' matches 'iPhone 13 Pro'", D.matches({"title": "iPhone 13 Pro"}, "iphone 13 128gb"))
+check("size is soft: 'bici da corsa taglia 54' matches a tg 56 road bike", D.matches({"title": "Bici da corsa Bianchi tg 56"}, "bici da corsa taglia 54"))
+check("synonyms: 'bicicletta corsa' matches 'bici da corsa'", D.matches({"title": "Bicicletta corsa Pinarello"}, "bici da corsa taglia 54"))
+check("'nike air max 90' ≠ 'Air Max 97'", not D.matches({"title": "Nike Air Max 97"}, "nike air max 90"))
+check("vague items are spotted: iphone, dyson, tv — not 'iphone 12' / 'dyson v8'", [n for n, _ in D.vague_items([{"name": "iphone"}, {"name": "iphone 12"}, {"name": "dyson v8"}, {"name": "dyson"}, {"name": "bici usata"}, {"name": "tv"}])] == ["iphone", "dyson", "bici usata", "tv"])
 
 # ---- ranking ---------------------------------------------------------------------------------------------------
 cards = [{"title": "Nintendo Switch", "price": 1.0}, {"title": "Nintendo Switch Lite", "price": 74.2, "total": 74.2}, {"title": "Nintendo Switch 1", "price": 100.45, "total": 100.45},
@@ -97,6 +102,14 @@ check("watch round 2: a cheaper real listing → one 🔔 message with the link"
 better, line = W.round()
 check("watch round 3: the same listing is not announced twice", better == [], better)
 markets.search_market = _orig
+# persistence: a watch survives a restart
+W.until = time.time() + 3600; W.save()
+W2 = D.Watcher.load(H)
+check("watcher saved and reloaded (items, best, seen, rounds)", W2 is not None and W2.items == W.items and W2.rounds == 3 and "https://x/2" in W2.seen and W2.best["dyson v8"]["url"] == "https://x/2", W2 and W2.__dict__)
+check("watcher status line", W2.status().startswith("👀 Watching vinted for dyson v8") and "3 round(s)" in W2.status(), W2.status())
+W.until = time.time() - 5; W.save()
+check("an expired watch is not reloaded", D.Watcher.load(H) is None)
+D.Watcher.clear()
 
 # ---- live part -------------------------------------------------------------------------------------------------
 if "--offline" not in sys.argv:
