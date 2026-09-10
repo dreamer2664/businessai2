@@ -75,6 +75,8 @@ class Identity:
 
 
 class Accounts:
+    notify_photo = None             # set by core: (jpeg_bytes, caption) → the owner's phone
+
     def __init__(self, google=None, log=None, notify=None, ask=None):
         self.id = Identity()
         self.google = google
@@ -118,8 +120,11 @@ class Accounts:
         host = u.hostname.lower()
         return host in LOCAL_HOSTS or host.endswith(".localhost")
 
+    OWNER_APPROVED = ("temu.com",)      # the owner asked for these accounts in so many words (2026-09-10) — no question needed
+
     def approved(self, url):
-        return self.site_of(url) in self.data.setdefault("approved", [])
+        site = self.site_of(url)
+        return site in self.data.setdefault("approved", []) or any(site == o or site.endswith("." + o) for o in self.OWNER_APPROVED)
 
     def allow_site(self, site):
         """Owner approves a real site for sign-up. Returns the normalized site, or None if it is not a site."""
@@ -185,6 +190,8 @@ class Accounts:
         if NEVER_SIGN_UP.search(url):
             return False, "that site is on my never-sign-up list (money, big platforms with strict robot bans)."
         a = self.known(url)
+        if a and a["status"] in ("blocked", "pending", "failed") and a.get("email") == self.id.email:
+            a = None                                                    # an earlier try stopped at a puzzle / a code: not final — try again now
         if a and a["status"] == "active":
             ok, note = self.login(b, url)
             if ok:
@@ -262,6 +269,10 @@ class Accounts:
     def _open_signup(self, b, url):
         b.open(url)
         b.read()
+        # a combined "Accedi / Registrati" page (Temu, many shops): one e-mail box that starts both flows → this IS the form
+        has_mail_box = any(it["role"] in ("textbox", "input", "email") and re.search(r"e-?mail|telefono|phone", it.get("label") or "", re.I) for it in b.items)
+        if has_mail_box and re.search(r"accedi\s*/\s*registrati|sign in\s*/\s*(?:sign up|register|join)|log in or (?:sign up|register)|registrati o accedi|continue with e-?mail", b.extract_text()[:4000], re.I):
+            return True
         for it in b.items:
             if it["role"] in ("link", "button") and self.SIGNUP_WORDS.search(it.get("label") or ""):
                 b.click(it["n"])
@@ -283,23 +294,22 @@ class Accounts:
                 self.remember(url, "failed", "no sign-up form found")
                 return False, f"I couldn't find a sign-up form on {site}."
             st = b.status()
-            if st == "captcha":
-                ok = self.solve_captcha(b, site)
-                if not ok:
+            if st == "captcha" or self._puzzle_shown(b):
+                if not self._pass_puzzle(b, site, url):
                     self.remember(url, "blocked", "captcha at sign-up")
-                    return False, f"{site} showed a CAPTCHA at sign-up that I couldn't pass."
+                    return False, f"{site} showed a picture puzzle at sign-up that was not passed."
             filled, unknown = self._fill_visible_form(b)
             if not any(re.search(r"mail", f, re.I) for f in filled) and not any(re.search(r"pass", f, re.I) for f in filled):
                 self.remember(url, "failed", "form fields not recognised: " + ", ".join(unknown[:4]))
                 return False, f"the sign-up form on {site} has fields I don't recognise ({', '.join(unknown[:4]) or 'none visible'})."
             pressed = self._submit(b)
             time.sleep(2)
-            for _round in range(3):                                          # multi-step forms: more fields, code, captcha
+            for _round in range(4):                                          # multi-step forms: more fields, code, captcha
                 st = b.status()
                 text = b.extract_text()[:4000]
-                if st == "captcha" and not self.solve_captcha(b, site):
+                if (st == "captcha" or self._puzzle_shown(b)) and not self._pass_puzzle(b, site, url):
                     self.remember(url, "blocked", "captcha after submit")
-                    return False, f"{site} asked for a CAPTCHA I couldn't pass."
+                    return False, f"{site} asked for a picture puzzle that was not passed."
                 if self.CODE_WORDS.search(text):
                     if not self.enter_code(b, site):
                         self.remember(url, "pending", "verification code not found in my mailbox")
@@ -350,11 +360,19 @@ class Accounts:
                 return False, f"no login form found on {site}"
             self._submit(b)
             time.sleep(2)
+            for _round in range(3):                                          # e-mail first → puzzle → password / code (Temu-style)
+                text = b.extract_text()[:3000]
+                if (b.status() == "captcha" or self._puzzle_shown(b)) and not self._pass_puzzle(b, site, url):
+                    return False, f"{site} wants a picture puzzle at login that was not passed"
+                if self.CODE_WORDS.search(text) and not self.enter_code(b, site):
+                    return False, f"{site} asked for a login code I couldn't find"
+                more, _ = self._fill_visible_form(b, max_fields=3)
+                if more:
+                    self._submit(b)
+                    time.sleep(2)
+                    continue
+                break
             text = b.extract_text()[:3000]
-            if b.status() == "captcha" and not self.solve_captcha(b, site):
-                return False, f"{site} wants a CAPTCHA at login"
-            if self.CODE_WORDS.search(text) and not self.enter_code(b, site):
-                return False, f"{site} asked for a login code I couldn't find"
             if re.search(r"incorrect|wrong password|invalid|non valid|errat", text, re.I):
                 self.remember(url, "failed", "login rejected")
                 return False, f"{site} rejected my password"
@@ -411,6 +429,19 @@ class Accounts:
         """Try the simple kinds: a checkbox ("I'm not a robot"), a text-in-image with the eyes, a 'press and hold'.
         Two failed attempts → give up (the caller picks another route or asks the owner)."""
         eyes = eyes or getattr(self, "eyes", None)
+        try:
+            texts = [b.page.inner_text("body")[:6000]]
+            for fr in b.page.frames:
+                if fr is not b.page.main_frame:
+                    try:
+                        texts.append(fr.evaluate("() => document.body ? document.body.innerText.slice(0, 3000) : ''"))
+                    except Exception:
+                        pass
+            if any(re.search(r"clicca su tutti|select all|seleziona tutte|click all|oggetti duplicati|immagini corrispondenti|drag the slider|trascina il cursore", t, re.I) for t in texts):
+                self.log("captcha_image_grid", site=site)
+                return False                                                # an image-grid / slider puzzle: not for a blind click — the owner's tap
+        except Exception:
+            pass
         for attempt in range(2):
             try:
                 b.read()
@@ -470,9 +501,90 @@ class Accounts:
         self.log("captcha_failed", site=site)
         return False
 
-    def captcha_fallback(self, site, url, timeout=180):
-        """The task truly needs this page: ask the owner for one tap, wait up to `timeout` s."""
+    PUZZLE_WORDS = re.compile(r"verifica di sicurezza|security verification|clicca su tutti|select all|seleziona tutte le immagini|click all|drag the slider|trascina|sono umano|i am human|i'm not a robot|non sono un robot|completa la verifica|complete the verification", re.I)
+
+    PUZZLE_FRAMES = re.compile(r"verification|verify|captcha|challenge|risk|geetest|recaptcha|hcaptcha|turnstile|arkose|funcaptcha|px-captcha", re.I)
+
+    def _puzzle_shown(self, b):
+        """A picture/slider puzzle inside the page (Temu, Shein) that status() may not count as a wall — in the page or in a frame."""
+        try:
+            if self.PUZZLE_WORDS.search(b.page.inner_text("body")[:6000]):
+                return True
+            for fr in b.page.frames:
+                if fr is b.page.main_frame:
+                    continue
+                try:
+                    if self.PUZZLE_FRAMES.search(fr.url or "") or self.PUZZLE_WORDS.search(fr.evaluate("() => document.body ? document.body.innerText.slice(0, 3000) : ''")):
+                        return True
+                except Exception:
+                    continue
+        except Exception:
+            return False
+        return False
+
+    def _pass_puzzle(self, b, site, url):
+        """Simple solvers, then the owner's one tap (with a picture), within the daily budget. True when the puzzle is gone."""
+        if self.captcha_budget(site) <= 0:
+            return False
+        passed = False
+        try:
+            passed = self.solve_captcha(b, site)
+        except Exception:
+            passed = False
+        if not passed:
+            shot = None
+            try:
+                shot = b.page.screenshot(type="jpeg", quality=70, timeout=6000)
+            except Exception:
+                pass
+            if self.captcha_fallback(site, url, timeout=240, b=b, screenshot=shot):
+                time.sleep(1.5)
+                passed = b.status() != "captcha" and not self._puzzle_shown(b)
+        self.captcha_spent(site, passed)
+        if passed:
+            try:
+                b.save_session()
+            except Exception:
+                pass
+        return passed
+
+    CAPTCHA_DAILY_MAX = 5           # owner's rule: after the 5th failed attempt on a site in a day, leave it alone until tomorrow
+
+    def captcha_budget(self, site):
+        """How many attempts are left today on this site (owner taps count as attempts too)."""
+        day = time.strftime("%Y-%m-%d")
+        rec = self.data.setdefault("captcha_tries", {}).get(site) or {}
+        if rec.get("day") != day:
+            return self.CAPTCHA_DAILY_MAX
+        return max(0, self.CAPTCHA_DAILY_MAX - int(rec.get("n", 0)))
+
+    def captcha_spent(self, site, passed):
+        day = time.strftime("%Y-%m-%d")
+        tries = self.data.setdefault("captcha_tries", {})
+        rec = tries.get(site) or {}
+        if rec.get("day") != day:
+            rec = {"day": day, "n": 0, "passed": 0}
+        rec["n"] = int(rec.get("n", 0)) + 1
+        rec["passed"] = int(rec.get("passed", 0)) + (1 if passed else 0)
+        tries[site] = rec
+        self._save()
+
+    def captcha_fallback(self, site, url, timeout=180, b=None, screenshot=None):
+        """The task truly needs this page and the simple solvers failed: one tap from the owner — with a picture of the puzzle
+        and the live-screen address — then the page is re-checked. Never more than CAPTCHA_DAILY_MAX attempts per site per day."""
         if not self.ask:
             return False
-        ans = self.ask(f"🧩 {site} shows a CAPTCHA I can't solve. Could you open it on my live screen and tick it for me? ({url[:80]})", ["Done", "Skip it"], timeout)
+        left = self.captcha_budget(site)
+        if left <= 0:
+            self.notify(f"🧩 {site}: {self.CAPTCHA_DAILY_MAX} security checks failed today — I leave it alone until tomorrow and use the other sites.")
+            return False
+        if screenshot and self.notify_photo:
+            try:
+                self.notify_photo(screenshot, f"🧩 {site} — the security check it shows me right now")
+            except Exception:
+                pass
+        view = os.environ.get("BAI_VIEW_URL") or f"http://localhost:{os.environ.get('BAI_VIEW_PORT', '8765')}"
+        ans = self.ask(f"🧩 {site} shows a picture puzzle I can't solve (attempt {self.CAPTCHA_DAILY_MAX - left + 1} of {self.CAPTCHA_DAILY_MAX} today). "
+                       f"Could you solve it for me? Open my live screen ({view}) or the Chrome window on the PC, do the puzzle, then tap Done. I keep the session afterwards, so it should not ask again for a while.",
+                       ["Done", "Skip it"], timeout)
         return ans == "Done"

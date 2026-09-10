@@ -164,6 +164,7 @@ class Agent:
         self._tg_auth_fails = 0
         self.briefer = Brief(planner=self.planner, log=self.log)
         self.accounts = Accounts(google=self.google, log=self.log, notify=self.notify, ask=self.ask)
+        self.accounts.notify_photo = lambda jpeg, cap: self.bot.send_photo(self.owner_id, jpeg, caption=cap[:200]) if self.owner_id else None
         self.accounts.eyes = self.eyes
         self.accounts.mailbox = self.mailbox
         self.sellers = SellerCheck(self.tasks, planner=self.planner, log=self.log, viewer=self.viewer, pace=self.pace, eyes=self.eyes)
@@ -1161,6 +1162,32 @@ class Agent:
                 return f"\u2705 {site} approved — I'll sign up there when a task needs it." if site else "I can't approve that (money sites and big-platform logins are never allowed; otherwise use /accounts allow vinted.it)."
             if arg.startswith("forget "):
                 return f"\U0001F6AB {arg[7:]} forgotten — no more sign-ups there." if self.accounts.forget_site(arg[7:]) else "That site wasn't on my approved list."
+            m_s = re.match(r"^(?:signup|sign up|register|login|log in)\s+(?:on\s+)?([a-z0-9.-]+)", arg)
+            if m_s:
+                if self.busy:
+                    return f"I'm on: {self.busy} — ask again when it's done (the sign-up needs the browser)."
+                site = m_s.group(1).lower().replace("www.", "")
+                from .deals import NEEDS_ACCOUNT
+                url = NEEDS_ACCOUNT.get(site.split(".")[0]) or (f"https://www.{site}/" if "." in site else f"https://www.{site}.com/")
+                def go():
+                    self.busy = f"account on {site}"
+                    try:
+                        def _run():
+                            with self.tasks._session() as b:
+                                ok, note = self.accounts.ensure_account(b, url, why="you asked for it")
+                                try:
+                                    b.save_session()
+                                except Exception:
+                                    pass
+                                return ok, note
+                        ok, note = self.tasks.on_hands(_run, timeout=900)
+                        self.bot.send(self.owner_id, (f"✅ {site}: {note}. Credentials: my own e-mail + the password in .secrets/env (BAI_ACCOUNT_PASSWORD) — remembered in state/accounts.json, never in the repo." if ok else f"❌ {site}: {note}"))
+                    except Exception as e:
+                        self.bot.send(self.owner_id, f"❌ {site}: {type(e).__name__}: {str(e)[:120]}")
+                    finally:
+                        self.busy = None
+                threading.Thread(target=go, daemon=True).start()
+                return f"🆕 Creating / checking my account on {site} now with {self.accounts.id.email}. If the site shows a picture puzzle I send you the picture and ask for one tap (Chrome window on the PC, or the live screen)."
             return self.accounts.list_text()
         if low.startswith("/google") or re.fullmatch(r"(please )?(connect|link|reconnect|set ?up) (to )?(my |your )?google( drive| account)?( please)?", low.strip(" .!")):
             return self.google_command(text[7:].strip() if low.startswith("/google") else "connect")

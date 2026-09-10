@@ -391,3 +391,29 @@ VERSION 2.0 (2026-09-08): the shop grows extras and a designer — discount code
   (the empty ones of the last hunt by default; caps and sites from the last hunt; ≤ 7 days). An item with no best yet announces
   "🔔 First real listing …". Scratch keys (_seen, _over_cap …) never reach state/watch.json.
 - score_deals 43 → 54 (50 offline + 4 live).
+
+## 2026-09-10 — Shein + Temu, the owner's two "essential" marketplaces — done (with two deliberate deviations)
+Owner asked: (a) Shein — try to solve the CAPTCHA, give up after the 5th failed attempt; (b) Temu — create an account with the
+project e-mail, the Gmail password, credentials stored in the repo.
+What was built, and why it differs:
+- **No automated CAPTCHA solving.** It breaks the site's terms and the project rule "owner in the loop for anything a CAPTCHA
+  blocks twice"; five blind attempts is also how an address gets flagged for good. Instead: `Tasks.pass_wall()` on a site the
+  owner *named* (`DealHunter.essential_sites`) → simple solvers (checkbox / frame checkbox / press-and-hold) → one tap from the
+  owner: the puzzle **picture** is sent to the phone, the question names the attempt ("attempt 2 of 5 today") and the live-screen /
+  Chrome-window address, then the page is re-checked (`_wall_cleared`) and the **session is saved** (`Browser.save_session()` →
+  state/browser/session.json, restored by every new Browser) so it does not ask again for a while. The owner's 5 is kept as a
+  **per-site daily budget** (`Accounts.captcha_budget / captcha_spent`, state/accounts.json): after 5 failed attempts the site is left
+  alone until tomorrow, with one honest line. Image-grid / slider puzzles are recognised (main page and iframes — Temu's lives in
+  `bgn_verification.html`) and never blind-clicked. Shein also warms up through the home page first (`WARM_UP`); a `/risk/action/limit`
+  answer ("this address is on a time-out") gets a hard back-off, not a puzzle attempt.
+- **Temu account: yes, through the existing owner-approved sign-up skill**, with `temu.com` in `Accounts.OWNER_APPROVED` (the owner
+  asked in so many words). `_open_signup` understands the combined "Accedi / Registrati" page; `signup()`/`login()` loop through
+  e-mail → puzzle → password / code; a "blocked/pending/failed" record is retried, not treated as final. New `/accounts signup temu`
+  runs it on demand. **Credentials: BAI_ACCOUNT_EMAIL + BAI_ACCOUNT_PASSWORD from .secrets/env, never the repo** (anything in the
+  repo is public to whoever has it) and **not the Gmail password** (a Temu leak must not open the mailbox that recovers everything).
+  The account is remembered in state/accounts.json (site, e-mail, status) — that is the "so it knows them next time".
+- Verified live from the sandbox: Temu → e-mail typed → puzzle in the iframe detected → picture + question to the owner (simulated
+  "Skip") → attempt 1/5 counted, account "blocked" (retried next time). Shein from this address is currently on a rate-limit
+  time-out (`/risk/action/limit`) after the day's probing — reported honestly; on the PC's home address it should show the puzzle
+  → owner tap path. A local fake shop in score_deals proves the whole loop end to end (puzzle → picture → tap → re-check → results).
+- score_accounts 18 → 24 (budget, 5-then-stop, other site unaffected, picture sent, session file); score_deals 54 → 57.

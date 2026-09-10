@@ -971,33 +971,59 @@ class Tasks:
         press-and-hold); if that fails and the page is essential (the owner asked for THIS page) ask the owner for one tap;
         otherwise skip it and let the caller use another page. Returns True when the page is now readable."""
         site = site or (urllib.parse.urlparse(url).netloc or url)[:60]
+        site = re.sub(r"^(www|it|m)\.", "", site)
         self.captcha_stats["tried"] += 1
         acc = self.accounts
+        if acc is not None and hasattr(acc, "captcha_budget") and acc.captcha_budget(site) <= 0:
+            self.log("captcha_budget_spent", site=site)
+            self.captcha_stats["skipped"] += 1
+            return False
+        passed = False
         try:
             if acc is not None and hasattr(acc, "solve_captcha"):
                 self.log("captcha_try", site=site)
                 if acc.solve_captcha(b, site, eyes=self.eyes):
-                    self.captcha_stats["passed"] += 1
-                    self.notify(f"🧩 Passed the security check on {site} by myself.")
-                    return True
+                    passed = True
         except Exception as e:
             self.log("captcha_try_error", site=site, error=str(e)[:80])
-        if essential and acc is not None and hasattr(acc, "captcha_fallback"):
+        if not passed and essential and acc is not None and hasattr(acc, "captcha_fallback"):
             self.captcha_stats["owner"] += 1
             try:
-                if acc.captcha_fallback(site, url, timeout=180):
-                    try:
-                        b.page.reload(timeout=15000)
-                        time.sleep(1.5)
-                    except Exception:
-                        pass
-                    if b.status() == "ok":
-                        return True
+                shot = None
+                try:
+                    shot = b.page.screenshot(type="jpeg", quality=70, timeout=6000)
+                except Exception:
+                    pass
+                if acc.captcha_fallback(site, url, timeout=180, b=b, screenshot=shot):
+                    if self._wall_cleared(b, url):
+                        passed = True
             except Exception as e:
                 self.log("captcha_fallback_error", site=site, error=str(e)[:80])
+        if acc is not None and hasattr(acc, "captcha_spent"):
+            acc.captcha_spent(site, passed)
+        if passed:
+            self.captcha_stats["passed"] += 1
+            try:
+                b.save_session()                                           # the solved check lives in cookies: keep them for next time
+            except Exception:
+                pass
+            self.notify(f"🧩 Passed the security check on {site}{' by myself' if self.captcha_stats['owner'] == 0 else ' with your tap'} — session kept, it should not ask again for a while.")
+            return True
         self.captcha_stats["skipped"] += 1
         self.log("captcha_skipped", site=site, essential=essential)
         return False
+
+    @staticmethod
+    def _wall_cleared(b, url):
+        """After the owner's tap: the page may already have moved on by itself; else reload the wanted url and look again."""
+        try:
+            if b.status() == "ok" and not re.search(r"/risk/|/challenge|captcha", b.page.url, re.I):
+                return True
+            b.page.goto(url, wait_until="domcontentloaded", timeout=20000)
+            time.sleep(2)
+            return b.status() == "ok" and not re.search(r"/risk/|/challenge|captcha", b.page.url, re.I)
+        except Exception:
+            return False
 
     def _stopped(self):
         """True when the owner said stop mid-job — long loops check this between pages."""

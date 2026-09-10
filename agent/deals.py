@@ -30,11 +30,12 @@ GAME_WORDS = re.compile(r"\b(zelda|mario|pok[eé]mon|kirby|splatoon|animal cross
                         r"spider-?man|god of war|last of us|uncharted|horizon|elden ring|dark souls|sekiro|hogwarts|lego [a-z]|sonic|crash|spyro|rayman|skyrim|witcher|cyberpunk|red dead|"
                         r"per (?:xbox|ps[345]|playstation|switch|nintendo|wii)|for (?:xbox|ps[345]|playstation|switch|nintendo|wii)|(?:xbox|ps[345]|playstation|switch) (?:one )?(?:e|and|&|/) (?:xbox|ps[345]|series))\b", re.I)   # a game titled with the console's name
 BROKEN = re.compile(r"\b(non funziona|not working|rott[oa]|broken|per ricambi|for parts|guast[oa]|difettos[oa]|faulty|da riparare|schermo rotto|cracked)\b", re.I)
+WARM_UP = {"shein": "https://it.shein.com/", "temu": "https://www.temu.com/it", "dhgate": "https://www.dhgate.com/", "aliexpress": "https://it.aliexpress.com/"}
+NEEDS_ACCOUNT = {"temu": "https://www.temu.com/it/login.html"}     # sites that show nothing to visitors: the agent's own account (owner-approved once) is used
 KNOWN_SITES = ("vinted", "subito", "wallapop", "ebay", "temu", "shein", "dhgate", "banggood", "aliexpress", "amazon", "facebook marketplace")
 USED_SITES = {"vinted", "subito", "wallapop", "facebook marketplace"}                  # private sellers, second-hand
 NEW_SITES = {"temu", "shein", "dhgate", "banggood", "aliexpress", "amazon"}            # shops, new goods, shipped (often from China: 2–4 weeks, customs over € 150)
-NO_LOGIN = {"facebook marketplace": "needs a Facebook login — I never log in by myself; open it on your phone with the city filter",
-            "temu": "sends visitors to a login page before any search — nothing to read without an account"}
+NO_LOGIN = {"facebook marketplace": "needs a Facebook login — I never log in by myself; open it on your phone with the city filter"}
 
 
 # an item name that alone gives useless results: a whole family (which model? which size?) — one question per list, not per item
@@ -220,6 +221,31 @@ class DealHunter:
     def _stopped(self):
         return bool(self.pace and self.pace.should_stop())
 
+    essential_sites = ()            # the sites the owner named in this job: worth a CAPTCHA tap / an account; others are just skipped
+
+    def essential(self, site):
+        return site in self.essential_sites
+
+    def _login_or_signup(self, b, site, url):
+        """Temu-style sites: log in with the agent's own account, or sign up once (owner approves the first time, code from Gmail)."""
+        acc = self.T.accounts
+        try:
+            ok, note = acc.ensure_account(b, NEEDS_ACCOUNT.get(site, url), why=f"{site} shows nothing without an account; you asked me to search it")
+        except Exception as e:
+            return False, f"account on {site} failed: {str(e)[:80]}"
+        if not ok:
+            return False, f"no account on {site} yet ({note})"
+        try:
+            b.save_session()
+            self.throttle.wait(url)
+            b.open(url)
+            time.sleep(1.5)
+            if re.search(r"/login\b|/signin\b|login\.html", b.page.url, re.I):
+                return False, f"logged in on {site} but the search still asks for a login — I'll try again next time"
+        except BrowserError as e:
+            return False, f"{site}: {str(e)[:60]}"
+        return True, "logged in"
+
     def depth(self):
         """How deep per item: 1 = one results page per site (quick), 2 = cheapest-first + relevance (normal),
         3 = + a second page and more listings verified (slow / a time floor)."""
@@ -278,6 +304,14 @@ class DealHunter:
             return [], f"{site}: I have no reader for this site yet"
         url = url.format(q=urllib.parse.quote_plus(name))
         self._site_prefs(b, site)
+        if site in WARM_UP and site not in getattr(b, "_warmed", set()):    # enter through the front door once per browser, like a person
+            try:
+                self.throttle.wait(WARM_UP[site])
+                b.open(WARM_UP[site])
+                time.sleep(1.5)
+            except BrowserError:
+                pass
+            b._warmed = getattr(b, "_warmed", set()) | {site}
         self.throttle.wait(url)
         try:
             b.open(url)
@@ -297,12 +331,39 @@ class DealHunter:
             title = b.page.title()
         except Exception:
             title = ""
-        if re.search(r"/risk/challenge|captcha_type=|/challenge\?", cur, re.I):
-            self.throttle.punish(url)
-            return [], f"{site}: shows a security check (CAPTCHA) to this browser — I don't try to pass those; it may open normally from your PC"
+        if re.search(r"/risk/action/limit|/risk/limit|rate.?limit", cur, re.I) or (st != "ok" and "429" in title):
+            self.throttle.punish(url); self.throttle.punish(url)              # a hard back-off: the site has had enough of this address for now
+            return [], f"{site}: has put this address on a time-out (too many visits) — nothing to do but wait; I try again in a while and use the other sites"
+        challenged = bool(re.search(r"/risk/challenge|captcha_type=|/challenge\?", cur, re.I)) or st == "captcha"
+        if challenged:
+            # the owner named this site → it is essential: simple solvers first, then one tap from the owner (≤ 5 attempts a day), session kept
+            passed = False
+            if hasattr(self.T, "pass_wall") and self.essential(site):
+                try:
+                    passed = self.T.pass_wall(b, url, essential=True, site=site)
+                except Exception as e:
+                    self.log("deal_captcha_error", site=site, error=str(e)[:80])
+            if not passed:
+                self.throttle.punish(url)
+                left = self.T.accounts.captcha_budget(site) if getattr(self.T, "accounts", None) and hasattr(self.T.accounts, "captcha_budget") else None
+                return [], (f"{site}: security check (picture puzzle) not passed" + (f" — {left} attempt(s) left today" if left is not None else "") + "; I searched the other sites")
+            try:
+                cur = b.page.url; title = b.page.title(); st = b.status()
+            except Exception:
+                pass
         if re.search(r"/login\b|/signin\b|login\.html", cur, re.I) and cur != url:
-            self.throttle.punish(url)
-            return [], f"{site}: sends visitors to a login page before showing results — I never log in by myself"
+            if site in NEEDS_ACCOUNT and getattr(self.T, "accounts", None) is not None and self.essential(site):
+                ok, note = self._login_or_signup(b, site, url)
+                if not ok:
+                    self.throttle.punish(url)
+                    return [], f"{site}: {note}"
+                try:
+                    cur = b.page.url; title = b.page.title(); st = b.status()
+                except Exception:
+                    pass
+            else:
+                self.throttle.punish(url)
+                return [], f"{site}: sends visitors to a login page before showing results — I never log in by myself"
         if st != "ok":
             self.throttle.punish(url)
             return [], f"{site}: {st} wall on this machine"
@@ -323,6 +384,7 @@ class DealHunter:
         Returns (doc path or None, summary text, per-item results)."""
         t0 = time.time()
         sites = [s for s in (sites or ("vinted", "subito")) if s in KNOWN_SITES] or ["vinted", "subito"]
+        self.essential_sites = tuple(sites)
         results = []
         notes = {}
         depth = self.depth()
@@ -636,7 +698,8 @@ DealHunter.watcher = _watcher
 
 
 # ---- generic readers for sites without a deep parser (best effort, read-only) --------------------------------
-SEARCH_URLS = {"wallapop": "https://it.wallapop.com/app/search?keywords={q}&order_by=price_low_to_high",
+SEARCH_URLS = {"temu": "https://www.temu.com/it/search_result.html?search_key={q}",
+               "wallapop": "https://it.wallapop.com/app/search?keywords={q}&order_by=price_low_to_high",
                "ebay": "https://www.ebay.it/sch/i.html?_nkw={q}&_sop=15&LH_PrefLoc=1",
                "banggood": "https://www.banggood.com/search/{q}.html",
                "dhgate": "https://www.dhgate.com/wholesale/search.do?searchkey={q}",

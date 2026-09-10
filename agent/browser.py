@@ -136,9 +136,23 @@ class Browser:
         self.headless = headless
         ua = _markets.pick_ua() if stealth else ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                                                              "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
-        self._ctx = self._browser.new_context(viewport={"width": 1280, "height": 900}, locale=os.environ.get("BAI_LOCALE", "it-IT"),
-                                              timezone_id=os.environ.get("OWNER_TZ", "Europe/Rome"), user_agent=ua,
-                                              extra_http_headers={"Accept-Language": "it-IT,it;q=0.9,en;q=0.7"})   # the owner is in Italy: sites answer in Italian, prices in EUR, fewer "where do you live?" popups
+        self.state_dir = state_dir or (config.STATE_DIR / "browser")
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        self.session_file = self.state_dir / "session.json"        # cookies + local storage: a solved check or a login survives the 10-minute idle close and restarts
+        ctx_kw = dict(viewport={"width": 1280, "height": 900}, locale=os.environ.get("BAI_LOCALE", "it-IT"),
+                      timezone_id=os.environ.get("OWNER_TZ", "Europe/Rome"), user_agent=ua,
+                      extra_http_headers={"Accept-Language": "it-IT,it;q=0.9,en;q=0.7"})   # the owner is in Italy: sites answer in Italian, prices in EUR, fewer "where do you live?" popups
+        if self.session_file.exists() and self.session_file.stat().st_size > 2:
+            try:
+                ctx_kw["storage_state"] = str(self.session_file)
+            except Exception:
+                pass
+        try:
+            self._ctx = self._browser.new_context(**ctx_kw)
+        except Exception as e:                                              # a corrupt session file must never keep the browser from opening
+            self.log("browser_session_unreadable", error=str(e)[:80])
+            ctx_kw.pop("storage_state", None)
+            self._ctx = self._browser.new_context(**ctx_kw)
         if stealth:
             self._ctx.add_init_script(_markets.STEALTH_INIT)
             self.log("browser_stealth", ua=ua[:60])
@@ -147,8 +161,6 @@ class Browser:
         if lean:                                   # small machines: no pictures, videos or web fonts — the text is what I read anyway
             self._ctx.route("**/*", lambda route: route.abort() if route.request.resource_type in ("image", "media", "font") else route.continue_())
         self.allow_actions = allow_actions
-        self.state_dir = state_dir or (config.STATE_DIR / "browser")
-        self.state_dir.mkdir(parents=True, exist_ok=True)
         self.page = self._ctx.new_page()
         self.items = []
         self.history = []
@@ -186,9 +198,34 @@ class Browser:
             pass
 
     # ---- lifecycle -----------------------------------------------------
+    def save_session(self):
+        """Cookies + local storage → state/browser/session.json (called on close and after a login / a passed check)."""
+        try:
+            self._ctx.storage_state(path=str(self.session_file))
+            return True
+        except Exception as e:
+            self.log("browser_session_save_failed", error=str(e)[:80])
+            return False
+
+    def forget_session(self, host=None):
+        """Drop the remembered session (all, or one site's cookies) — '/browser forget shein'."""
+        try:
+            if host:
+                keep = [c for c in self._ctx.cookies() if host not in c.get("domain", "")]
+                self._ctx.clear_cookies()
+                if keep:
+                    self._ctx.add_cookies(keep)
+            else:
+                self._ctx.clear_cookies()
+                self.session_file.unlink(missing_ok=True)
+            self.save_session()
+        except Exception as e:
+            self.log("browser_session_forget_failed", error=str(e)[:80])
+
     def close(self):
         if self.viewer:
             self.viewer.browser_open = False
+        self.save_session()
         try:
             self._ctx.close(); self._browser.close(); self._pw.stop()
         except Exception:

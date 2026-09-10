@@ -124,6 +124,52 @@ W.until = time.time() - 5; W.save()
 check("an expired watch is not reloaded", D.Watcher.load(H) is None)
 D.Watcher.clear()
 
+# ---- a walled shop: puzzle → picture + one tap from the owner → re-check → session kept (a local fake, no browser risk) ----
+try:
+    import threading, http.server, socketserver
+    class _H(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+        def do_GET(self):
+            ck = self.headers.get("Cookie", "")
+            if self.path.startswith("/pdsearch") and "solved=1" not in ck:
+                self.send_response(302); self.send_header("Location", "/risk/challenge?captcha_type=909"); self.end_headers(); return
+            if self.path.startswith("/risk/challenge"):
+                body = "<html><body><h1>Shop</h1><div>Fare clic per completare le seguenti azioni per verificare che sei umano. Seleziona tutte le immagini corrispondenti</div></body></html>"
+            elif self.path.startswith("/solve"):
+                self.send_response(302); self.send_header("Set-Cookie", "solved=1; Path=/"); self.send_header("Location", "/pdsearch/tripod/"); self.end_headers(); return
+            else:
+                body = "<html><body><h1>Results</h1>" + "".join(f"<div><a href='/product-{i}.html'>Tripod model {i} for phones</a> <span>€ {5+i},90</span></div>" for i in range(6)) + "<p>" + "x " * 400 + "</p></body></html>"
+            self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.end_headers(); self.wfile.write(body.encode("utf-8"))
+    socketserver.TCPServer.allow_reuse_address = True
+    _srv = socketserver.TCPServer(("127.0.0.1", 0), _H); _port = _srv.server_address[1]; threading.Thread(target=_srv.serve_forever, daemon=True).start()
+    from agent.tasks import Tasks as _Tasks
+    from agent.accounts import Accounts as _Acc
+    _notes, _asks = [], []
+    _T = _Tasks(log=lambda k, **f: None, notify=lambda t: _notes.append(t))
+    def _tap(q, opts=None, t=0):
+        _asks.append(q); _T._browser.page.goto(f"http://127.0.0.1:{_port}/solve"); return "Done"
+    _A = _Acc(log=_T.log, notify=lambda t: _notes.append(t), ask=_tap); _A.notify_photo = lambda j, c: _notes.append("📷")
+    _T.accounts = _A
+    _D = D.DealHunter(_T, log=_T.log)
+    D.SEARCH_URLS["fakeshop"] = f"http://127.0.0.1:{_port}" + "/pdsearch/{q}/"; D.KNOWN_SITES = D.KNOWN_SITES + ("fakeshop",)
+    _D.essential_sites = ("fakeshop",)
+    def _go():
+        with _T._session() as b:
+            return _D.search_site(b, "fakeshop", {"name": "tripod", "max": None}, limit=5, depth=1)
+    _cards, _note = _T.on_hands(_go, timeout=90)
+    check("walled shop: the owner gets the puzzle picture and ONE question (attempt 1 of 5)", len(_asks) == 1 and "attempt 1 of 5" in _asks[0] and "📷" in _notes, (_asks, _notes))
+    check("after the owner's tap the page is re-checked, passed, session kept", any("Passed the security check" in n and "session kept" in n for n in _notes) and _A.data["captcha_tries"]["fakeshop"]["passed"] == 1, _notes)
+    check("results were read after the puzzle", len(_cards) >= 3, (_cards[:1], _note))
+    _T.on_hands(_T.close_browser, timeout=30)
+except Exception as e:
+    for n in ("walled shop: question", "walled shop: passed", "walled shop: results"):
+        check(n + " (browser unavailable)", False, e)
+finally:
+    try:
+        _srv.shutdown(); _srv.server_close()
+    except Exception:
+        pass
+
 # ---- live part -------------------------------------------------------------------------------------------------
 if "--offline" not in sys.argv:
     try:

@@ -114,6 +114,26 @@ def run4():
     return A.ensure_account(b, "https://www.paypal.com/signup")
 ok4, note4 = T.on_hands(run4, timeout=30)
 check("refuses money sites", not ok4 and "never-sign-up" in note4, note4)
+# ---- the owner's rule: picture puzzles → one tap from the owner, at most 5 attempts per site per day, session kept ----
+taps = []
+A5 = Accounts(google=FakeGoogle(), log=lambda k, **f: None, notify=lambda t: notes.append(t), ask=lambda q, opts=None, t=0: (taps.append(q), "Skip it")[1])
+A5.notify_photo = lambda jpeg, cap: notes.append("photo:" + cap[:20])
+check("captcha budget starts at 5 per site per day", A5.captcha_budget("shein.com") == 5)
+for i in range(5):
+    A5.captcha_fallback("shein.com", "https://it.shein.com/x", timeout=1, screenshot=b"x")
+    A5.captcha_spent("shein.com", False)
+check("five failed attempts → budget 0, the owner was asked 5 times with the attempt number", A5.captcha_budget("shein.com") == 0 and len(taps) == 5 and "attempt 5 of 5" in taps[-1], (A5.captcha_budget("shein.com"), len(taps)))
+r6 = A5.captcha_fallback("shein.com", "https://it.shein.com/x", timeout=1)
+check("sixth attempt refused with an honest line, no question asked", r6 is False and len(taps) == 5 and any("leave it alone until tomorrow" in n for n in notes), notes[-1:])
+check("another site still has its own budget", A5.captcha_budget("temu.com") == 5)
+check("the puzzle picture was sent to the owner before the question", any(n.startswith("photo:") for n in notes))
+def run5():
+    b = T.browser()
+    b.open("http://127.0.0.1:8098/")
+    saved = b.save_session()
+    import os as _os
+    return saved and b.session_file.exists() and b.session_file.stat().st_size > 2
+check("browser session (cookies) is saved to state/browser/session.json", T.on_hands(run5, timeout=60))
 T.on_hands(T.close_browser, timeout=30)
 print(A.list_text() if show else "")
 print(f"ACCOUNTS SCORE: {ok}/{total}  ({time.time() - t0:.0f}s)")

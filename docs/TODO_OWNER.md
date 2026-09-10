@@ -115,3 +115,16 @@ Reality check on 2026-09-09 with the real browser:
   item comes back empty it says why ("only look-alikes under € 30 — real ones start around € 280") and what to do. You can say
   "watch it", "watch nintendo switch max 150 for 3 hours" or "keep an eye on the xbox for 2 days" — it checks every 15 min and
   speaks only when a real one appears or beats the best.
+
+## 2026-09-10 — Shein and Temu (your request) — what I did and where I deliberately said no
+- **Shein:** I did *not* build a CAPTCHA solver — it's against Shein's terms, against the project's own rule (you in the loop when a
+  CAPTCHA blocks twice), and five blind attempts is exactly how an address gets banned for good. What it does now: when Shein shows
+  the picture puzzle on a search *you asked for*, it sends you the picture on Telegram and asks for one tap — solve it in the Chrome
+  window on the PC (or the live screen), tap **Done**, and it continues **and keeps the session**, so it should not ask again for a
+  while. Your "5" is the rule: 5 failed attempts on a site in a day → it leaves that site alone until tomorrow and says so.
+- **Temu:** yes, an account — with the project e-mail (busynessai001@gmail.com) but **not the Gmail password** (if Temu leaks it, the
+  mailbox that recovers everything goes with it) and **never stored in the repo** (the repo is visible to anyone with access). It
+  uses the separate password already in `.secrets/env` (BAI_ACCOUNT_PASSWORD) and remembers the account in `state/accounts.json`.
+  Temu shows a picture puzzle at sign-up too → same one-tap flow. To do it now, on purpose: send **/accounts signup temu** and watch
+  the Chrome window; the verification code comes from the project Gmail by itself.
+- If you still want the Gmail password reused or the credentials in the repo, say so explicitly and I'll do it — but I'd advise against both.
