@@ -130,6 +130,20 @@ class Pace:
         self.forced_hurry = True
         self.mode = "quick"
 
+    def slow_now(self, floor_min=None, budget_min=None):
+        """The owner said 'slow down' / 'take 5-6 hours' mid-job: quick is off, the floor/budget count from the job's start."""
+        self.forced_hurry = False
+        self.mode = "slow"
+        self.deadline = None
+        self.deadline_min = None
+        base = self.started or time.time()
+        if floor_min:
+            self.floor_min = int(floor_min)
+            self.floor_until = base + 60 * self.floor_min
+        if budget_min:
+            self.budget_until = base + 60 * int(budget_min)
+        self.log("pace_slowed", floor_min=self.floor_min, budget_min=budget_min)
+
     def stop_now(self):
         """The owner said 'stop': long loops end at their next check and hand over what they have."""
         self.stopped = True

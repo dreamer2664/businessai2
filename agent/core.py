@@ -167,6 +167,8 @@ class Agent:
         self.accounts.eyes = self.eyes
         self.accounts.mailbox = self.mailbox
         self.sellers = SellerCheck(self.tasks, planner=self.planner, log=self.log, viewer=self.viewer, pace=self.pace, eyes=self.eyes)
+        from .deals import DealHunter
+        self.deals = DealHunter(self.tasks, log=self.log, viewer=self.viewer, pace=self.pace)
         self.sellers.accounts = self.accounts
         self.tasks.accounts = self.accounts                  # CAPTCHA solvers + one-tap owner fallback for essential pages
         self.study = Study(self.tasks, planner=self.planner, google=self.google, memory=self.memory, log=self.log, notify=self.notify, viewer=self.viewer)
@@ -1171,8 +1173,8 @@ class Agent:
             self._last_doc_link = link
         return link
 
-    def resend_last_doc(self, to_drive=False):
-        """'send me the last document again' / 'upload the last document to drive'."""
+    def resend_last_doc(self, to_drive=False, as_pdf=False):
+        """'send me the last document again' / 'upload the last document to drive' / '… as a PDF' (printed by the headless browser)."""
         rows = library.recent(1)
         if not rows:
             return "I haven't written any document yet — ask for research, a seller check or a comparison and it lands in /library."
@@ -1188,11 +1190,27 @@ class Agent:
                 return f"Uploaded “{r.get('title', path.name)}” to my Drive → {up.get('link') or up.get('webViewLink') or 'Research folder'}"
             except Exception as e:
                 return f"Drive upload failed: {str(e)[:120]}"
+        note = ""
+        if as_pdf:
+            pdf = self.doc_as_pdf(path)
+            if pdf:
+                path = pdf
+            else:
+                note = "\n(I couldn't print it to PDF on this machine — here is the HTML instead; it opens in any browser, and the browser can save it as PDF.)"
         try:
-            self.bot.send_document(self.owner_id, str(path), caption=f"{r.get('title', path.name)} — {str(r.get('t', ''))[:10]}")
+            self.bot.send_document(self.owner_id, str(path), caption=f"{r.get('title', path.name)} — {str(r.get('t', ''))[:10]}" + note)
         except Exception as e:
             return f"I couldn't send the file: {str(e)[:100]}"
         return None
+
+    def doc_as_pdf(self, path):
+        """The HTML document as a PDF (headless Chromium, separate process) — the path, or None when the browser is missing."""
+        try:
+            from agent import pdfout
+            return pdfout.html_to_pdf(path)
+        except Exception as e:
+            self.log("pdf_failed", error=str(e)[:100])
+            return None
 
     def translate(self, body, lang):
         """Short translations with the thinking model (a supplier's message, a reply to a customer). Honest when it isn't there."""
@@ -1223,7 +1241,7 @@ class Agent:
             quick = self.talk.quick(text.strip())                                     # to-do, clock, opinions, translations: answered live, job untouched
             if isinstance(quick, dict):
                 quick = (quick.get("text") or (self.translate(quick["translate"], quick["to"]) if quick.get("translate") else None)
-                         or (self.resend_last_doc(to_drive=quick.get("to_drive")) if quick.get("last_doc") else None))
+                         or (self.resend_last_doc(to_drive=quick.get("to_drive"), as_pdf=quick.get("as_pdf")) if quick.get("last_doc") else None))
             if not quick and (self.talk.PRICE.search(text) or self.talk.SHIP_OK.search(text)):   # pricing maths: no browsing, answer now
                 p = self.talk.reply(text)
                 quick = p if isinstance(p, str) else None
@@ -1239,6 +1257,24 @@ class Agent:
                 return quick
             what, reply = self.mind.interrupt(text)
             if what in ("status", "why", "hurry", "after"):
+                if what == "hurry" and reply.startswith("Slowing down"):
+                    self.mind.job["snags"].append("owner said slow down")
+                    self.viewer.show_plan(self.mind.job.get("goal", ""), self.mind.job.get("steps", []), self.pace) if hasattr(self.viewer, "show_plan") else None
+                return reply
+            if what == "stop_again":
+                self.stop_flag = True
+                self.pace.stop_now()
+                if self.mind.job.get("stop_again", 0) >= 2:                          # third 'stop': the owner wants silence, not a result
+                    self.mind.job["drop"] = True
+                    try:
+                        self.tasks.close_browser()
+                    except Exception:
+                        pass
+                    return "Dropped — no result will follow. Say what you need."
+                try:
+                    self.tasks.interrupt_page()
+                except Exception:
+                    pass
                 return reply
             if what == "chat" and reply:
                 return reply
@@ -1271,6 +1307,19 @@ class Agent:
                 return f"Noted for this job: “{text.strip()[:100]}”. I apply it to what's left, and I'll say so in the result."
             qpos = self.mind.q_add(text)
             return f"Got it — I'm in the middle of “{_short(self.mind.job['goal'])}”, so this is queued as #{qpos}. I start it as soon as I'm done (or say 'stop' to switch now)."
+        if getattr(self, "pending_list", None) and not low.startswith("/"):
+            items = self.briefer.list_items(text)
+            if items:
+                b, self.pending_list = self.pending_list, None
+                b = self.briefer.with_items(b, items)
+                self.last_brief = None
+                return self.execute(b, approved=True)
+            if re.match(r"^(no|cancel|stop|forget it|nah|annulla|lascia)\W*$", low):
+                self.pending_list = None
+                return "Okay, dropped."
+            if len(low.split()) <= 12 and not re.search(r"https?://", low):           # a change to the plan while I wait
+                self.pending_list = self.briefer.amend(self.pending_list, text)
+                return "Noted. Still waiting for the list — one item per line."
         if self.last_brief and self.GO_WORDS.match(low):
             b, self.last_brief = self.last_brief, None
             return self.execute(b, approved=True)
@@ -1332,7 +1381,7 @@ class Agent:
                     self.last_quiet = 0
                 return direct["text"]
             if direct.get("last_doc"):
-                return self.resend_last_doc(to_drive=direct.get("to_drive"))
+                return self.resend_last_doc(to_drive=direct.get("to_drive"), as_pdf=direct.get("as_pdf"))
             if direct.get("mail_code"):
                 threading.Thread(target=self.fetch_mail_code, args=(direct.get("hint") or "",), daemon=True).start()
                 return f"Looking in my Gmail for a fresh verification code{' from ' + direct['hint'] if direct.get('hint') else ''} — I'll paste it here as soon as it lands (I check for about 2 minutes)."
@@ -1394,6 +1443,20 @@ class Agent:
         if it and it["kind"] in ("watch", "summarize", "visit") and b["kind"] in ("ask", "research", "visit", "watch", "summarize") and b["kind"] != "trending":
             b["kind"], b["topic"] = it["kind"], it["topic"]                                        # URL rules are reliable
         self.log("intent", intent=b["kind"], topic=b["topic"][:80])
+        if b.get("pace_only"):                                                       # "slow down!!" with nothing running: remembered for the next job
+            self.pace_hint = b["pace"]
+            pp = b["pace"]
+            span = f" at least {pp['floor_min'] // 60} h" if pp.get("floor_min") else ""
+            return ("Nothing is running right now, so there is nothing to slow down — but noted: the next job runs at a slow pace" + span + "." if pp["pace"] == "slow"
+                    else "Nothing is running right now — noted, the next job goes quick." if pp["pace"] == "quick" else "Nothing is running right now. Say what you need.")
+        if getattr(self, "pace_hint", None) and b["kind"] not in ("chat", "ask") and b["pace"]["pace"] == "normal" and not b["pace"].get("floor_min"):
+            b["pace"] = dict(self.pace_hint, why=(self.pace_hint.get("why") or "you asked for this pace just before"))
+            self.pace_hint = None
+        if b.get("needs_list"):                                                      # "the list I'm about to send" → the plan waits for the items
+            self.pending_list = b
+            self.last_brief = None
+            return (Brief.text(b) + "\n\n📝 Send me the list now — one item per line (a price limit after a dash is fine, e.g. “nintendo switch — max 150”). "
+                    "I start as soon as it arrives.")
         if b["kind"] == "chat":
             try:
                 return self.planner.reply(text) if self.planner.installed() else "Hi! Tell me what you need — a search, a seller check, a document, a website…"
@@ -1463,6 +1526,9 @@ class Agent:
             head += "\n\n🧠 From last time: " + " · ".join(adv[:2])
         if plink:
             head += f"\n📝 Follow along here (it fills in while I work): {plink}"
+        if b.get("items"):                                                   # the owner's shopping list → deal hunt, one section per item
+            threading.Thread(target=self.run_deals, args=(b,), daemon=True).start()
+            return head + "\n\nYou'll get the document here (and in my Drive if it's connected)."
         if kind == "seller_check":
             threading.Thread(target=self.run_seller_check, args=(b,), daemon=True).start()
             return head + "\n\nStarting — you'll get the document here (and in my Drive if it's connected)."
@@ -1729,6 +1795,36 @@ class Agent:
         finally:
             self.busy = None
             self._finish_job("ideas session", delivered=locals().get("delivered", True))
+
+    def run_deals(self, b):
+        """The list job: DealHunter on the hands thread, then the document + a short line per item."""
+        self.busy = f"deals: {len(b['items'])} items"
+        delivered = True
+        summary = ""
+        try:
+            city = None
+            for c in b.get("constraints") or []:
+                m = re.search(r"\b(?:in|di|a)\s+(?:the\s+)?(?:city\s+of\s+|città\s+di\s+)?([A-Z][A-Za-zÀ-ÿ' -]{2,30})", str(c))
+                if m and re.search(r"facebook|marketplace|local|nearby|vicino", str(c), re.I):
+                    city = m.group(1).strip().title()
+            sites = list(b.get("sites") or ())
+            path, summary, results = self.tasks.on_hands(self.deals.run, b["items"], sites, city, 4, True, timeout=3000)
+            link = ""
+            if path and self.google.connected():
+                link = self.hand_over_doc(path, None, folder="Research")
+                link = f"\n📄 Google Doc: {link}" if link else ""
+            self.bot.send(self.owner_id, f"✅ {summary[:2800]}{link}")
+            if path:
+                self.bot.send_document(self.owner_id, str(path), caption="The deals document — one section per item, best price first, with links and pictures.")
+            self.memory.note("deals", "; ".join(i["name"] for i in b["items"]), summary[:500], [c["url"] for r in results for c in r["best"][:1]])
+        except Exception as e:
+            self.log("deals_failed", error=traceback.format_exc()[-400:])
+            self.bot.send(self.owner_id, f"The deal hunt failed: {type(e).__name__}: {str(e)[:160]}" + ("\n" + self.tasks.machine_fix(str(e)) if self.tasks.machine_fix(str(e)) else ""))
+            self.mind.snag(f"{type(e).__name__}: {str(e)[:80]}")
+            delivered = False
+        finally:
+            self.busy = None
+            self._finish_job(summary[:200], delivered=delivered)
 
     def run_seller_check(self, b):
         self.busy = f"seller check: {b['topic'][:40]}"
@@ -2452,8 +2548,8 @@ class Agent:
             return self.resend_last_doc(to_drive=True)
         if re.search(r"\b(send|resend|forward)\b.{0,20}\b(it|doc|document|report|file)\b", low) and re.search(r"\b(again|me|here)\b", low):
             return self.resend_last_doc()
-        if re.search(r"\bpdf\b", low):
-            return "About the PDF: my documents are HTML files (they open in any browser and in Google Docs from my Drive). A PDF export is not something I can do yet — I've noted it as a wish."
+        if re.search(r"\bpdf\b", low):                                              # "as a PDF when you're done" → the same document, printed
+            return self.resend_last_doc(as_pdf=True)
         self.mind.q_add(re.sub(r"\b(when (you'?re |it'?s )?(done|finished|ready)|afterwards|after that|once (you'?re |it'?s )?(done|finished)|at the end)\b", "", text, flags=re.I).strip(" ,"))
         return None
 
@@ -2478,9 +2574,12 @@ class Agent:
             out = self.tasks.run(command)
         finally:
             self.busy = None
+            dropped = bool(self.mind.job and self.mind.job.get("drop"))
             if brief is not None:
-                self._finish_job(out[:200], delivered=not out.startswith("Task failed"))
+                self._finish_job(out[:200], delivered=not out.startswith("Task failed") and not dropped)
         self.log("out", text=out[:300])
+        if dropped:                                                        # the owner said 'stop' three times: silence, as promised
+            return
         path = self.tasks.last_doc
         if path and not want_doc:                  # a doc came out anyway (e.g. seller list in a compare) → still hand it over
             want_doc = True
@@ -2606,7 +2705,7 @@ class Agent:
         if getattr(self, "filler", False):
             self.preempt_filler()
             cut = True
-        if self.last_brief:
+        if self.last_brief and not (was and self.mind.job):                # a pending plan is dropped — unless a real job is running: that one stops
             self.last_brief = None
             return "Okay, dropped." + (" I also stopped the self-training — idle now." if cut else "")
         if cut:
@@ -2615,9 +2714,22 @@ class Agent:
                 return "Stopped the self-training — I'm idle now. Reminders and the inbox keep running; say what you need."
             return f"Stopped the self-training. Now on your request:\n\n{nxt}" if isinstance(nxt, str) else None
         if was and self.mind.job:
+            again = self.mind.job.get("stop_asked") and time.time() - self.mind.job["stop_asked"] < 90
             self.stop_flag = True
             self.site_training = False
             self.pace.stop_now()
+            if again:                                                          # a second/third 'stop': the truth, not the same line again
+                self.mind.job["stop_again"] = self.mind.job.get("stop_again", 0) + 1
+                try:
+                    self.tasks.interrupt_page()
+                except Exception:
+                    pass
+                if self.mind.job["stop_again"] >= 2:
+                    self.mind.job["drop"] = True
+                    return "Dropped — I stop writing anything up for it. Say what you need."
+                return ("Still stopping — the page I'm on finishes (up to ~30 s), no new pages are opened, then you get what I have. "
+                        "One more 'stop' and I drop the result altogether.")
+            self.mind.job["stop_asked"] = time.time()
             self.mind.snag("owner said stop")
             q = ""
             if self.mind.queue:

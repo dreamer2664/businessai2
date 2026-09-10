@@ -243,7 +243,10 @@ def parse_vinted_api(data, limit=12):
         if not isinstance(it, dict) or not it.get("url"):
             continue
         u = it.get("user") or {}
-        out.append({"title": str(it.get("title") or "")[:120], "price": _money(it.get("price")), "total": _money(it.get("total_item_price")),
+        ph = it.get("photo") or {}
+        thumbs = {t.get("type"): t.get("url") for t in (ph.get("thumbnails") or []) if isinstance(t, dict)} if isinstance(ph, dict) else {}
+        out.append({"image_url": thumbs.get("thumb310x430") or (ph.get("url") if isinstance(ph, dict) else "") or "",
+                    "title": str(it.get("title") or "")[:120], "price": _money(it.get("price")), "total": _money(it.get("total_item_price")),
                     "url": str(it["url"]).split("?")[0], "id": it.get("id"), "brand": str(it.get("brand_title") or "")[:60], "size": str(it.get("size_title") or "")[:20],
                     "condition": vinted_condition(it.get("status")), "seller": str(u.get("login") or "")[:40], "seller_id": u.get("id"),
                     "favourites": it.get("favourite_count"), "views": it.get("view_count")})
@@ -460,6 +463,9 @@ def _subito_ad_card(ad):
             "condition": subito_condition(_subito_feature(ad, "/item_condition")), "size": _subito_feature(ad, "/fashion/size")[:20], "brand": _subito_feature(ad, "/fashion/brand")[:40] or _subito_feature(ad, "/brand")[:40],
             "shipping": "TuttoSubito" if _subito_feature(ad, "/item_shippable") in ("Sì", "1", "true") else "", "listed": str(ad.get("date") or "")[:10],
             "seller": str(adv.get("name") or "")[:40], "seller_type": "company" if adv.get("company") else "private"}
+    imgs = ad.get("images") or []
+    if imgs and isinstance(imgs[0], dict) and imgs[0].get("cdnBaseUrl"):
+        card["image_url"] = str(imgs[0]["cdnBaseUrl"]) + "?rule=vertical-mini-card-1x-auto"
     cost = _subito_feature(ad, "/item_shipping_cost_tuttosubito")
     if cost and card["shipping"]:
         card["shipping"] = f"TuttoSubito from {cost}"

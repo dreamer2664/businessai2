@@ -29,11 +29,14 @@ origin, materials). "document" when the owner wants links, pictures or a walk-th
 logs in or posts publicly. Owner's message: """
 
 # pace words → (pace, minutes)
-_QUICK = r"\b(real quick|quick(ly)?|asap|right away|fast|hurry|in a hurry|subito|veloce|rapido)\b"
-_SLOW = r"\b(take (it|your time) (real |really )?slow|take your time|no rush|no hurry|slowly|whenever|con calma|piano)\b"
+# "subito" is Italian for "right away" AND the name of a marketplace: only the adverb counts (never subito.it / on subito / subito, vinted)
+_QUICK = r"\b(real quick|quick(ly)?|asap|right away|fast|hurry|in a hurry|(?<![\w.])subito(?!\.it|\.com|\s*(?:,|and|e|or|o|/)\s*(?:vinted|ebay|wallapop|amazon|etsy|facebook|depop|temu|shein)|\s+(?:e|and)\b)|veloce|rapido)\b"
+_SITE_WORDS = r"\b(?:on|su|in|from|da|look in|search|cerca su)\s+subito\b|\bsubito\.(?:it|com)\b|\bsubito\s*(?:,|and|e|or|o|/)\s*(?:vinted|ebay|wallapop|amazon|etsy|facebook|depop|temu|shein)\b|\b(?:vinted|ebay|wallapop|amazon|etsy|facebook marketplace|depop)\s*(?:,|and|e|or|o|/)\s*subito\b"
+_RANGE = r"(\d+)\s*(?:-|–|—|to|a|or|/)\s*(\d+)\s*(min(?:ute)?s?|h(?:ou)?rs?|or[ae]|minuti)"
+_SLOW = r"\b(take (it|your time) (real |really |very )?slow(ly)?|take it easy|take your time|slow down|slower|not (so|that|too) fast|no rush|no hurry|slowly|whenever|con calma|piano|rallenta|più lento|non correre)\b"
 _DEADLINE = r"\b(?:in|within|entro|tra|fra)\s+(?:(mezz[’']?ora)|(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|half an|half|un[’']?|una|due|tre|quattro|cinque|sei|sette|otto|nove|dieci|undici|dodici)\s*(min(?:ute)?s?|h(?:ou)?rs?|or[ae]|minuti|day|days|giorni))\b"
 _AWAY = r"\b(?:(?:i(?:'m| am| will be| ll be)|gonna be|going to (?:be|work)|at work|out|away|busy|sleeping|asleep|sono (?:fuori|via|al lavoro|occupat[oa])|torno|dormo)\D{0,40}?)(?:(mezz[’']?ora)|(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|half an|half|un[’']?|una|due|tre|quattro|cinque|sei|sette|otto|nove|dieci|undici|dodici)\s*(h(?:ou)?rs?|or[ae]|min(?:ute)?s?|minuti))\b"
-_FLOOR = r"\b(?:at least|atleast|minimum(?: of)?|min(?:imum)?\.?|no less than|not less than|spend(?: at least)?|take(?: at least)?|almeno|minimo|non meno di)\s+(?:(mezz[’']?ora)|(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|half an|half|un[’']?|una|due|tre|quattro|cinque|sei|sette|otto|nove|dieci|undici|dodici)\s*(min(?:ute)?s?|h(?:ou)?rs?|or[ae]|minuti))\b"
+_FLOOR = r"\b(?:at least|atleast|minimum(?: of)?|min(?:imum)?\.?|no less than|not less than|spend(?: at least)?|take(?: at least)?(?: (?:around|about|roughly|some|approximately|circa|~))?|use(?: around| about)?|(?:you have|you've got|you get)(?: around| about)?|almeno|minimo|non meno di|prenditi(?: circa)?|usa(?: circa)?)\s+(?:(mezz[’']?ora)|(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|half an|half|un[’']?|una|due|tre|quattro|cinque|sei|sette|otto|nove|dieci|undici|dodici)\s*(min(?:ute)?s?|h(?:ou)?rs?|or[ae]|minuti))\b"
 _CEILING = r"\b(?:at most|no more than|not more than|max(?:imum)?(?: of)?\.?|up to|al massimo|massimo|non più di|non piu di)\s+(?:(mezz[’']?ora)|(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|half an|half|un[’']?|una|due|tre|quattro|cinque|sei|sette|otto|nove|dieci|undici|dodici)\s*(min(?:ute)?s?|h(?:ou)?rs?|or[ae]|minuti))\b"
 _NUM = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
         "ten": 10, "eleven": 11, "twelve": 12, "fifteen": 15, "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50,
@@ -115,12 +118,22 @@ def parse_duration(text):
     return None
 
 
+def _strip_sites(low):
+    """Site names out of the way of the pace words ('look in subito.it' is a place, not 'right away')."""
+    return re.sub(_SITE_WORDS, " SITE ", low)
+
+
 def parse_pace(text):
     """Rules only. Returns {"pace": quick|normal|slow, "deadline_min": int|None, "budget_min": int|None, "why": str}."""
-    low = " " + text.lower() + " "
+    low = _strip_sites(" " + text.lower() + " ")
     out = {"pace": "normal", "deadline_min": None, "budget_min": None, "floor_min": None, "why": ""}
+    mr = re.search(r"\b(?:take|spend|use|around|about|roughly|circa|prenditi|for|in)\s+(?:around |about |roughly |circa |some )?" + _RANGE + r"\b", low)
+    if mr:                                                              # "take around 5-6 hours": the low end is the floor, the high end the budget
+        lo, hi = _minutes(mr.group(1), mr.group(3)), _minutes(mr.group(2), mr.group(3))
+        if lo and hi and hi >= lo and lo >= 5:
+            out.update(pace="slow", floor_min=lo, budget_min=hi, why=f"you said {_span(lo)} to {_span(hi)} — I use at least {_span(lo)} and stop by {_span(hi)}")
     m = re.search(_FLOOR, low)
-    if m:
+    if m and not out["floor_min"]:
         mins = _dur(m)
         if mins and mins >= 5:
             out.update(pace="slow", floor_min=mins, why=f"you asked for at least {_span(mins)} — a floor, not a deadline")
@@ -145,7 +158,8 @@ def parse_pace(text):
             else:
                 out.update(deadline_min=mins, why=f"you want it in {mins} minutes" if mins < 120 else f"you want it in {mins // 60} hours")
                 out["pace"] = "quick" if mins <= 15 else out["pace"]
-    if re.search(_QUICK, low) and out["pace"] != "slow" and not out["floor_min"]:
+    unquoted = re.sub(r"[\"“”'‘’]([^\"“”'‘’]{1,40})[\"“”'‘’]", " ", low)           # 'you put "quick" as timing' is about the word, not a wish
+    if re.search(_QUICK, unquoted) and out["pace"] != "slow" and not out["floor_min"] and not re.search(_SLOW, low):
         out["pace"] = "quick"
         out["why"] = out["why"] or "you said quick"
         if out["deadline_min"] is None and re.search(r"\b(in 10|10 min|ten min|real quick|make it quick)\b", low):
@@ -168,6 +182,23 @@ def _span(mins):
 # what a job usually takes when the owner gives no time — said in the plan, so "unspecified" is a choice, not a guess
 USUAL_MIN = {"seller_check": "5–10", "research": "2–5", "compare": "3–6", "trending": "1–3", "build_site": "5–10",
              "watch": "1–3", "summarize": "1", "visit": "1–2", "post": "1", "ask": "1"}
+
+
+PACE_ONLY = re.compile(r"^\W*(?:no|yes|ok|okay|hey|please|but|and|i said|ho detto|ti ho detto)?\W*(?:(?:take (?:it|your time) (?:real |really |very )?slow(?:ly)?|slow down|slower|slowly|take it easy|take your time|no rush|no hurry|hurry( up)?|faster|quick(?:er|ly)?|speed (?:it )?up|"
+                       r"con calma|piano|rallenta|più lento|sbrigati|fai presto|veloce|i said (?:slow|quick|fast)[^.!?,]*|(?:take|use|spend) (?:around |about )?\d+(?:\s*(?:-|–|to)\s*\d+)? ?(?:min(?:ute)?s?|h(?:ou)?rs?|ore))[\s,.!]*)+\W*$", re.I)
+LIST_COMING = re.compile(r"\b(?:(?:this|the|a|my) list (?:that |which )?(?:i(?:'m| am| will| ?'ll)? (?:about to |going to |gonna )?(?:send|paste|write|give|attach)|i send (?:you )?(?:next|after|below|later))|"
+                         r"(?:i(?:'m| am| will| ?'ll) (?:about to |going to |gonna )?(?:send|paste|give)(?: you)? (?:the|a|my) list)|(?:list (?:coming|follows|below|to follow|in the next message))|"
+                         r"(?:la lista che (?:ti )?(?:mando|invio|sto per mandare))|(?:ti mando la lista))\b", re.I)
+
+
+def pace_only(text):
+    """'No, I said slow down!!' / 'take it very slowly' / 'take 5-6 hours' — a pace change, never a job of its own."""
+    return bool(PACE_ONLY.match(text.strip())) and not re.search(r"https?://|\b(find|search|check|compare|research|cerca|trova|buy|list of)\b", text, re.I)
+
+
+def list_coming(text):
+    """The owner says the items come in a later message → the plan must wait for them."""
+    return bool(LIST_COMING.search(text))
 
 
 def _rule_brief(text, pace):
@@ -229,14 +260,16 @@ def _rule_brief(text, pace):
         product = re.sub(r"\s{2,}", " ", product).strip(" ,.-")
     conds = [c.strip(" .;,") for c in re.findall(r"\(([^()]{8,160})\)", text)]
     conds += [m.strip(" .;,") for m in re.findall(r"(?:^|[.;,]\s*)((?:it |they |[a-z.]+ )?(?:has to|have to|must|needs? to|should|only if|no |not just|without|excluding|deve|devono|solo se|senza)\b[^.;()]{4,120})", text, flags=re.I)]
-    conds += [m.strip(" .;,") for m in re.findall(r"\b(i want [^.;()]{4,80})", text, flags=re.I)]
+    conds += [m.strip(" .;,") for m in re.findall(r"(?:^|[.;]\s*)((?:[A-Za-z][\w' ]{2,40}?)\s+(?:is|are|sono|è)\s+(?:only |solo )?(?:ok|okay|fine|allowed|accepted|good|valid|bene)\s+(?:only |solo )?(?:if|when|se|quando)\b[^.;()]{4,120})", text, flags=re.I)]   # "Facebook marketplace is only ok if they're in Barletta"
+    conds += [m.strip(" .;,") for m in re.findall(r"\b(i want (?!you to |u to |it |a |an |the |some |to )[^.;()]{4,80})", text, flags=re.I)]   # "I want only new items" — not "I want you to find…"
     conds += [m.strip(" .;,") for m in re.findall(r"\b((?:solo|soltanto|only)\s+(?:con|with|if|se)\s+[^.;()]{3,60})", text, flags=re.I)]
     seen, conditions = set(), []
     for c in conds:
         k = c.lower()
         if k not in seen and not any(k in o.lower() and k != o.lower() for o in conds):
             seen.add(k); conditions.append(c)
-    sites = re.findall(r"\b(vinted|subito(?:\.it)?|ebay(?:\.it)?|amazon(?:\.it)?|etsy|wallapop|depop|aliexpress|temu|facebook marketplace|zalando|leroy merlin|ikea|alibaba|shein|kleinanzeigen|leboncoin)\b", low)
+    sites = re.findall(r"\b(vinted|subito(?:\.it)?|ebay(?:\.it)?|amazon(?:\.it)?|etsy|wallapop|depop|aliexpress|temu|facebook marketplace|marketplace di facebook|zalando|leroy merlin|ikea|alibaba|shein|dhgate|banggood|kleinanzeigen|leboncoin)\b", low)
+    sites = ["facebook marketplace" if s_ == "marketplace di facebook" else s_ for s_ in sites]
     sites = list(dict.fromkeys(s_.replace(".it", "") for s_ in sites))
     if counterfeit:
         goal = f"{goal} — note: branded replicas are counterfeit, so I research genuine/unbranded options instead"
@@ -279,6 +312,31 @@ def _rule_brief(text, pace):
         "chat": [],
     }[kind]
     out = {"goal": goal, "deliverable": deliverable, "kind": kind, "steps": steps, "questions": [], "counterfeit": counterfeit, "topic": product or goal, "constraints": conditions[:4], "sites": sites[:5]}
+    deal_words = re.search(r"\b(best deals?|cheapest|best price|lowest price|good deals?|bargains?|occasion[ei]|affar[ei]|prezzo più basso|meno car[oi])\b", low)
+    if deal_words and sites and kind in ("research", "seller_check", "ask") and not list_coming(text) and product and len(product.split()) <= 12:
+        names = [x.strip() for x in re.split(r"\s*(?:,|;|\band\b|\be\b|/)\s*", re.sub(r"\b(the |some |a few )?(best |good |great )?(deals?|bargains?|prices?|offers?|occasion[ei]|affar[ei])\b|\b(cheapest|best price|lowest price|for|on|per|su)\b", " ", product, flags=re.I)) if x.strip()]
+        names = [re.sub(r"\s{2,}", " ", n).strip(" .-") for n in names]
+        names = [n for n in names if 2 <= len(n) <= 60 and not re.fullmatch(r"(a|an|the|some|used|new|cheap|good|me)", n)]
+        if names:
+            out["items"] = [{"name": n, "max": None} for n in names[:10]]
+            out["kind"] = "research"
+            out["deliverable"] = "document"
+            out["goal"] = f"Find the best deals for {', '.join(names)} on {', '.join(sites)}"
+            out["topic"] = "; ".join(names)
+            out["steps"] = [f"Search {' and '.join(sites)} for each item — cheapest sound listings first (no accessories, no broken units)",
+                            "Open the best listing per item for the seller's feedback and shipping",
+                            "Write the document: one section per item with links, pictures and prices"]
+    if list_coming(text) and kind in ("research", "seller_check", "compare", "ask"):
+        out["kind"] = "research"                                                   # deals for many items = research per item, not one seller check
+        out["deliverable"] = "document"
+        out["topic"] = "the items on your list"
+        out["needs_list"] = True
+        out["goal"] = "Find the best deals for each item on the list you send" + (f" (on {', '.join(sites)})" if sites else "")
+        out["steps"] = ["Wait for your list (one item per line)",
+                        f"Search {' and '.join(sites) if sites else 'the marketplaces'} for each item — used listings with shipping, cheapest first",
+                        "Open the best listings per item: price, condition, seller rating, shipping, where it is" + (" (Facebook only if the seller is in the city you named)" if any("facebook" in c.lower() for c in out["constraints"]) else ""),
+                        "Write the document: one section per item, best deal first, with links, pictures and the seller's rating"]
+        out["constraints"] = [c for c in out["constraints"] if not re.search(r"\babout to send\b|\bi want you to\b", c, re.I)]
     if kind == "trending":
         out["topic"] = product                                                  # "" = global; never the whole sentence
         out["n"] = n_items or 5
@@ -292,6 +350,9 @@ class Brief:
 
     def make(self, text):
         pace = parse_pace(text)
+        if pace_only(text):                                                        # "slow down!!" is not a job
+            return {"goal": text.strip(), "deliverable": "answer", "kind": "chat", "steps": [], "questions": [], "counterfeit": False,
+                    "topic": "", "constraints": [], "sites": [], "pace": pace, "pace_only": True, "t": time.time()}
         b = _rule_brief(text, pace)
         if self.planner is not None and self.planner.installed() and b["kind"] not in ("chat",) and len(text.split()) >= 3:
             try:
@@ -301,12 +362,14 @@ class Brief:
                 if isinstance(j.get("steps"), list) and 2 <= len(j["steps"]) <= 8 and all(isinstance(s, str) and 3 < len(s) < 160 for s in j["steps"]):
                     b["steps"] = [s.strip().rstrip(".") for s in j["steps"]]
                 if j.get("kind") in ("research", "seller_check", "compare", "summarize", "visit", "watch", "build_site", "post", "ask", "chat"):
-                    if not (b["kind"] == "seller_check" and j["kind"] == "research") and b["kind"] != "trending":        # rules see sellers and trending better than the small model
+                    if not (b["kind"] == "seller_check" and j["kind"] == "research") and b["kind"] != "trending" and not b.get("needs_list"):        # rules see sellers and trending better than the small model
                         b["kind"] = j["kind"]
                 if j.get("deliverable") in ("answer", "list", "document", "file", "website", "post", "reply"):
                     b["deliverable"] = j["deliverable"] if not (b["deliverable"] == "document" and j["deliverable"] == "answer") else "document"
-                if isinstance(j.get("goal"), str) and 5 < len(j["goal"]) < 200:
+                if isinstance(j.get("goal"), str) and 5 < len(j["goal"]) < 200 and not b.get("needs_list"):
                     b["goal"] = j["goal"].strip()
+                if b.get("needs_list") and b["steps"] and not b["steps"][0].lower().startswith("wait for your list"):
+                    b["steps"] = ["Wait for your list (one item per line)"] + b["steps"][:6]
                 if isinstance(j.get("questions"), list):
                     b["questions"] = [q for q in j["questions"] if isinstance(q, str) and 5 < len(q) < 160][:2]
             except Exception as e:
@@ -314,6 +377,39 @@ class Brief:
         b["pace"] = pace
         b["t"] = time.time()
         self.log("brief", task=b["kind"], deliverable=b["deliverable"], pace=pace["pace"], deadline=pace["deadline_min"], budget=pace["budget_min"], steps=len(b["steps"]))
+        return b
+
+    @staticmethod
+    def list_items(text):
+        """The owner's list → [{'name', 'max'}]. Lines, numbered lines, bullets or a comma list of ≥ 2 short things; else []."""
+        raw = [l.strip(" \t-•*·–—") for l in text.strip().splitlines() if l.strip(" \t-•*·–—")]
+        raw = [re.sub(r"^\(?\d{1,2}[.)]\s*", "", l) for l in raw]
+        if len(raw) == 1 and raw[0].count(",") >= 1 and len(raw[0]) < 300 and not re.search(r"\b(find|search|look|check|cerca|trova)\b", raw[0], re.I):
+            raw = [x.strip() for x in raw[0].split(",") if x.strip()]
+        if not raw or (len(raw) == 1 and (len(raw[0].split()) > 8 or re.search(r"\b(find|search|look|check|cerca|trova|please|can you)\b", raw[0], re.I))):
+            return []
+        items = []
+        for l in raw[:25]:
+            m = re.search(r"\s*(?:—|–|-|:|\(|,)?\s*(?:max(?:imum)?|under|below|fino a|massimo|entro|budget)?\s*(?:€|eur)?\s*(\d{1,5})\s*(?:€|eur|euro)?\)?\s*$", l, re.I)
+            mx = int(m.group(1)) if m and re.search(r"max|under|below|fino|massimo|entro|budget|€|eur", l, re.I) else None
+            name = re.sub(r"\s*(?:—|–|-|:|\(|,)?\s*(?:max(?:imum)?|under|below|fino a|massimo|entro|budget)?\s*(?:€|eur)?\s*\d{1,5}\s*(?:€|eur|euro)?\)?\s*$", "", l, flags=re.I).strip(" -—–:(") if mx else l
+            if 2 <= len(name) <= 80:
+                items.append({"name": name, "max": mx})
+        if len(items) == 1 and (len(items[0]["name"].split()) < 2 or re.fullmatch(r"(ok(ay)?|yes|no|go|thanks?|grazie|ciao|hi|hello|stop|cancel|why|what|status)\W*", items[0]["name"], re.I)):
+            return []                                                              # "ok" / "go" is not a one-item list
+        return items
+
+    @staticmethod
+    def with_items(b, items):
+        """The waiting plan + the list → a runnable research brief (topic = the items, one section each)."""
+        b = dict(b); b.pop("needs_list", None)
+        b["items"] = items
+        names = [i["name"] + (f" (max € {i['max']})" if i.get("max") else "") for i in items]
+        b["topic"] = "; ".join(names)
+        b["goal"] = re.sub(r"the list you send", f"your list ({len(items)} items)", b["goal"])
+        b["steps"] = [st for st in b["steps"] if not st.lower().startswith("wait for your list")]
+        b["kind"] = "research"
+        b["deliverable"] = "document"
         return b
 
     def amend(self, b, change):

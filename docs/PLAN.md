@@ -307,3 +307,30 @@ VERSION 2.0 (2026-09-08): the shop grows extras and a designer — discount code
 - selfcheck (`python3 -m agent.selfcheck`) now launches Chromium once and reports the walls memory, thinking model and Google state;
   doctor.sh v6 installs playwright + the headless shell when they are missing and prints the selfcheck in its report.
 - think 21 → 25. mind 42, talk 463, floor 44, stop 11, queue 20, brief 39, progress 16, docs 20, walls 14 unchanged.
+
+## 2026-09-10 — the owner's "best deals list" session: 11 faults fixed, a deal hunter built (docs/DIAGNOSIS_2026-09-10.md) — done
+- Root cause of the cascade: `_QUICK` matched *subito* inside "look in subito.it" (Italian for "right away") → pace quick →
+  every later "slow down" was misread: HURRY matched the quoted word "quick", the pace messages were queued as jobs, ran as
+  `summarize slow down`, and the browser tried to open https://slow down. Then `topic_of` picked the longest sentence
+  ("Facebook marketplace is only ok if…") as the product, a seller check searched Vinted for it and landed on a Baricco novel.
+- brief.py: site names never count as pace words; "take around 5-6 hours" = floor 5 h + budget 6 h; quoted words ignored;
+  `pace_only()` (a pace message alone is chat, not a job); `list_coming()` → the plan **waits for the list** (`needs_list`),
+  the Barletta rule stays a condition, "I want you to…" is never a condition; `Brief.list_items()` parses the list (lines,
+  bullets, commas, "— max 150"); `Brief.with_items()` makes the runnable brief; "best deals for X and Y on vinted and subito"
+  is a deal hunt straight away.
+- mind.py: SLOW_DOWN beats HURRY (also "I said … hours"); mid-job slow-down sets the floor (`Pace.slow_now`); repeated 'stop'
+  → `stop_again` (honest line, third = drop, `Tasks.interrupt_page()` refuses new pages); fake-URL failures and owner snags
+  never become site lessons.
+- browser.py: `open()` refuses non-addresses; `open()` closes cookie banners itself (+ second pass for late iframes; trailing
+  "→" tolerated, reject preferred) and non-cookie modals (`dismiss_modal`: Vinted's "Dove vivi?" → Italia, X/"not now",
+  Escape). Verified live: Subito Didomi → "Continua senza accettare", Vinted → country modal closed, eBay/Banggood clean.
+- agent/deals.py (new): `DealHunter.run(items, sites, city)` — per item: the marketplaces' own search (Vinted JSON with
+  thumbnails, Subito __NEXT_DATA__ with images), title match (a Baricco novel never matches "nintendo switch"), owner's
+  price cap, ranking cheapest-first with penalties (accessory/part/broken, unnamed cheaper variant like "Lite", far below
+  the median), top listing opened for seller feedback, one document: glance table + one section per item with pictures.
+  Sites without a deep reader (banggood, ebay, dhgate, shein, aliexpress, amazon) go through a generic card reader;
+  temu (login wall) and facebook marketplace (login) are named as not searchable. Live from the sandbox: wallapop 403,
+  dhgate Cloudflare, shein risk-challenge, temu login — each ends as a one-line note, never a failure.
+- talk.py: "the UK / united kingdom / …" clocks; owner's timezone (OWNER_TZ, default Europe/Rome) not the machine's.
+- tasks.py: `summarize` without a URL answers in words; machine faults add the doctor line.
+- New suite engine/scripts/score_session.py (38 checks, every row of the diagnosis). Full battery re-run, no drops.

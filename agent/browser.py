@@ -222,9 +222,15 @@ class Browser:
         if BLOCKED.search(url):
             raise BrowserError(f"blocked domain: {url}")
 
+    stop_requested = False          # set by Tasks.interrupt_page() when the owner insists on 'stop': no new page on this job
+
     def open(self, url):
+        if self.stop_requested:
+            raise BrowserError("stopped by the owner")
         if not re.match(r"^(https?|file)://", url):
             url = "https://" + url
+        if not re.match(r"^(https?)://(?:[\w-]+(?:\.[\w-]+)*\.[a-z]{2,63}|localhost|\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-f:]+\])(?::\d+)?(?:[/?#]|$)|^file:///", url, re.I):
+            raise BrowserError(f"'{url[8:60]}' is not a web address — nothing to open")   # never 'https://slow down'
         self._check(url)
         t0 = time.time()
         for attempt in (1, 2):
@@ -242,7 +248,28 @@ class Browser:
         self.history.append(url)
         self.log("browser_open", url=url, ms=int((time.time() - t0) * 1000))
         self._show(f"Opened {url}")
+        self._banner_pass()
         return self.read()
+
+    banners_closed = 0              # how many cookie/consent banners this browser closed (the owner can ask)
+
+    def _banner_pass(self):
+        """Cookie banners are closed here, for every page — not only where a caller remembered to. Consent iframes
+        (Sourcepoint, Didomi, OneTrust) often arrive after 'networkidle', so a second look follows a moment later."""
+        try:
+            label = self.dismiss_banner()
+            if not label:
+                time.sleep(1.2)
+                label = self.dismiss_banner()
+            if label:
+                self.banners_closed += 1
+                self._show(f"Closed the cookie banner (“{label}”)")
+            m = self.dismiss_modal()
+            if m:
+                self.banners_closed += 1
+                self._show(f"Closed a popup (“{m}”)")
+        except Exception:
+            pass
 
     def back(self):
         self.page.go_back(wait_until="domcontentloaded"); return self.read()
@@ -346,13 +373,59 @@ class Browser:
   if (!cands.length) return null;
   const box = cands.sort((a, b) => a.innerText.length - b.innerText.length)[0];
   const btns = Array.from(box.querySelectorAll('button, a, input[type=button], input[type=submit], [role=button]')).filter(vis);
-  const txt = (b) => ((b.innerText || b.value || b.getAttribute('aria-label') || b.getAttribute('title') || '').trim().replace(/\s+/g, ' '));
+  const txt = (b) => ((b.innerText || b.value || b.getAttribute('aria-label') || b.getAttribute('title') || '').trim().replace(/\s+/g, ' ').replace(/[\s→›»>✓✔.!]+$/, '').trim());
   let pick = btns.find(b => rejectRe.test(txt(b))) || btns.find(b => okRe.test(txt(b)));
   if (!pick) return {found: true, clicked: null, text: (box.innerText || '').slice(0, 120)};
   const label = txt(pick); pick.click();
   return {found: true, clicked: label, text: (box.innerText || '').slice(0, 120)};
 }
 """
+
+    _JS_MODAL = r"""
+() => {
+  // A modal that is NOT a cookie banner: country picker ("Dove vivi?"), app nag, newsletter, "we ship to…". Prefer the
+  // owner's country when it is offered, else the X / close / "not now" button. Never a login, never "allow notifications".
+  const vis = (el) => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el);
+      return r.width > 200 && r.height > 60 && s.visibility !== 'hidden' && s.display !== 'none' && s.opacity !== '0'; };
+  const boxes = Array.from(document.querySelectorAll('[role=dialog], dialog, [aria-modal=true], .ReactModal__Content, [class*=modal i], [class*=popup i], [class*=overlay i]'))
+    .filter(el => vis(el) && (el.innerText || '').trim().length > 10)
+    .filter(el => { const s = getComputedStyle(el);
+      const isDialog = el.getAttribute('role') === 'dialog' || el.tagName === 'DIALOG' || el.getAttribute('aria-modal') === 'true' || /ReactModal__Content/.test(el.className || '');
+      return isDialog || s.position === 'fixed' || s.position === 'absolute' || (s.zIndex && parseInt(s.zIndex) >= 100); });
+  if (!boxes.length) return null;
+  const box = boxes.sort((a, b) => a.innerText.length - b.innerText.length)[0];
+  const text = (box.innerText || '').slice(0, 200);
+  if (/\b(password|log ?in|sign ?in|accedi|sign up|iscriviti)\b/i.test(text.slice(0, 80)) && !/where|dove|country|paese|ship to|region/i.test(text)) return null;
+  const shown = (el) => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el);
+      return r.width > 8 && r.height > 8 && s.visibility !== 'hidden' && s.display !== 'none'; };     // items may sit below the fold: still clickable
+  const items = Array.from(box.querySelectorAll('button, a, [role=button], [role=option], li, label, input[type=button]')).filter(shown);
+  const txt = (b) => ((b.innerText || b.value || b.getAttribute('aria-label') || b.getAttribute('title') || '').trim().replace(/\s+/g, ' '));
+  const country = items.find(b => /^(🇮🇹\s*)?(italia|italy|italien|italie)\b/i.test(txt(b)));
+  if (country) { country.click(); return {kind: 'country', clicked: txt(country).slice(0, 40), text}; }
+  const closeRe = /^(x|✕|×|✖|close|chiudi|schließen|fermer|cerrar|dismiss|not now|no,? thanks|no grazie|non ora|maybe later|più tardi|later|skip|salta|continue|continua|continue (on|in|to) (the )?(web|site|browser)|stay (on|in) (the )?(web|site|browser)|rimani sul sito|got it|ok|okay|ho capito|capito|keep browsing|continue shopping|continua (lo )?shopping)$/i;
+  const close = items.find(b => closeRe.test(txt(b))) || items.find(b => /close|chiudi|dismiss/i.test((b.getAttribute('aria-label') || '') + ' ' + (b.getAttribute('data-testid') || '') + ' ' + (b.className || '').toString()));
+  if (close) { close.click(); return {kind: 'close', clicked: txt(close).slice(0, 40) || (close.getAttribute('aria-label') || 'x'), text}; }
+  return {kind: 'unknown', clicked: null, text};
+}
+"""
+
+    def dismiss_modal(self):
+        """Close a non-cookie popup covering the page (country picker → Italia; app nag / newsletter → X). Returns a label or ''."""
+        try:
+            r = self.page.evaluate(self._JS_MODAL)
+        except Exception:
+            return ""
+        if r and r.get("clicked"):
+            time.sleep(0.6)
+            self.log("browser_modal", kind=r["kind"], clicked=r["clicked"], text=r.get("text", "")[:80])
+            return r["clicked"]
+        if r and r.get("kind") == "unknown":
+            try:
+                self.page.keyboard.press("Escape")                     # the last polite try: most modals close on Escape
+                time.sleep(0.4)
+            except Exception:
+                pass
+        return ""
 
     def dismiss_banner(self):
         """Close a cookie / consent banner if one covers the page: prefers 'reject' / 'necessary only', else 'ok'/'accept'.

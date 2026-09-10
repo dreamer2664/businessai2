@@ -85,3 +85,18 @@ Reality check on 2026-09-09 with the real browser:
 - 2026-09-10 (later): the stale "BrowserType.launch" advice is gone — machine faults (browser/module missing, no disk/memory) are
   repairs for the owner (🔧 line with the doctor command), never planner lessons; old advice retires after 14 days or a clean run.
   selfcheck + doctor.sh v6 install/verify the browser. think 25/25.
+
+## 2026-09-10 — your "best deals list" test: what was wrong and what changed
+- The one word that broke everything: **subito**. In Italian it means "right away", and the bot read your "look in subito.it"
+  as "do it quick". From there every "slow down" was misunderstood. Fixed: a site name is never a pace word.
+- "Take around 5-6 hours" now means: at least 5 hours of work, stop by 6. "Slow down" during a job slows it (it never says
+  "Speeding up" to a complaint). A message that is only about pace is never a task.
+- "the list I'm about to send" → it now shows the plan and **waits for your list** (one item per line, "— max 150" optional).
+  The list starts the job at once, no "Go" needed. "Facebook only in Barletta" is kept as a rule.
+- A second "stop" tells you the truth ("still stopping, the current page finishes, no new pages"); a third drops the result.
+- Cookie banners and popups (Subito's, Vinted's "Dove vivi?") are now closed on every page the bot opens.
+- New: a **deal hunter** — one document, one section per item, cheapest sound listing first, pictures, seller feedback,
+  accessories/broken units pushed down. From this sandbox: Vinted + Subito work fully; Banggood works; Wallapop, DHgate,
+  Shein block the sandbox's address (they may work from your PC — the bot says so per site); Temu and Facebook need a login,
+  so they are named as not searchable.
+- "What time is it in the UK" works (and the clock is yours, Europe/Rome, not the machine's).

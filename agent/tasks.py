@@ -130,6 +130,14 @@ class Tasks:
         finally:
             self._browser = None
 
+    def interrupt_page(self):
+        """The owner said 'stop' twice: no further page opens on this job (the current navigation ends by its own 30 s timeout —
+        Playwright objects cannot be touched from another thread, so this flag is the honest maximum)."""
+        b = self._browser
+        if b is not None:
+            b.stop_requested = True
+        self.log("browser_interrupt")
+
     def tick(self):
         """Call periodically: closes the browser after IDLE_CLOSE seconds without a task."""
         b = self._browser
@@ -141,6 +149,7 @@ class Tasks:
     def _session(self):
         with self._lock:
             b = self.browser()
+            b.stop_requested = False                                  # a new job: the last 'stop' is spent
             try:
                 yield b
             except Exception:
@@ -505,6 +514,8 @@ class Tasks:
         return path
 
     def summarize(self, url, max_points=8):
+        if not re.match(r"^(?:https?://)?(?:[\w-]+(?:\.[\w-]+)*\.[a-z]{2,63}|localhost|\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?(?:[/?#]|$)|^file:///", url.strip(), re.I):
+            return f"“{url.strip()[:60]}” is not a web address, so there is no page to summarize — send me the link, or tell me what you want in a few more words."
         with self._session() as b:
             if url.lower().endswith(".pdf"):
                 text = b.download_text(url); title = url

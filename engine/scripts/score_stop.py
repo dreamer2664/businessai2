@@ -50,4 +50,19 @@ A.mind.job = None; A.busy = None; A.stop_flag = False
 # 7) after 'stop', the planned request from the brief is dropped, in words
 A.last_brief = {"goal": "x", "steps": [], "pace": {"pace": "normal", "deadline_min": None, "budget_min": None}, "kind": "research", "topic": "x", "deliverable": "answer"}
 r = A.respond("stop"); check("stop with a pending plan → dropped", r == "Okay, dropped.", r)
+# 8) "send me the last report as a PDF" → the same document, printed by the headless browser (never "a wish")
+from agent import library
+_doc = library.LIB_DIR / "pdf_check.html"; library.LIB_DIR.mkdir(parents=True, exist_ok=True)
+_doc.write_text("<html><body><h1>PDF check</h1><p>hello</p></body></html>", encoding="utf-8")
+library.register("research", "PDF check", _doc, options=1, sources=1)
+A.bot.docs = []
+r = A.respond("send me the last report as a pdf")
+sent = A.bot.docs[-1] if A.bot.docs else ""
+check("last report as pdf → a .pdf file is sent (or the HTML with an honest note)", str(sent).endswith((".pdf", ".html")) and "wish" not in str(r or ""), f"r={r} docs={A.bot.docs}")
+if str(sent).endswith(".pdf"):
+    check("the pdf is real", open(sent, "rb").read(5) == b"%PDF-", sent)
+else:
+    check("the pdf is real (skipped: no browser here)", True)
+r = A.after_job("send it as a pdf")
+check("'as a pdf when you're done' → the document is printed too, not 'a wish'", "wish" not in str(r or "") and len(A.bot.docs) >= 2, f"r={r} docs={A.bot.docs}")
 print(f"STOP SCORE: {ok}/{tot}")

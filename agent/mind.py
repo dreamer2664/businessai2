@@ -30,6 +30,7 @@ STOP = re.compile(r"^\W*(stop|cancel|abort|enough|that'?s enough|(ok|okay),? tha
 WHY = re.compile(r"\b(why|what for|perch[eé]|how come)\b", re.I)
 CHAT = re.compile(r"^\W*((ok(ay)?|alright|fine|good|nice|great|cool|perfect|super|wow|lol|haha|thanks?( you)?( a lot| so much)?|thank you|grazie( mille)?|ottimo|perfetto|bene|hi|hello|hey|ciao|👍|❤️|🙏|👌|😊|🙂)[\s,!.]*)+"
                   r"((job|work) so far|so far|then|keep going|go on|continue|carry on|no rush|no hurry|take your time|whenever|con calma|vai pure|continua)?\W*$", re.I)
+SLOW_DOWN = re.compile(r"\b(slow down|slower|take (it|your time) (real |really |very )?slow(ly)?|slowly|take it easy|not (so|that|too) fast|too fast|take (around |about )?\d+(\s*(-|–|to)\s*\d+)? ?(h(ou)?rs?|ore)|rallenta|più lento|con calma|non correre|troppo veloce)\b", re.I)
 NO_RUSH = re.compile(r"\b(take your time|no rush|no hurry|whenever( you can)?|when you can|no stress|con calma|fai con calma|quando puoi|non c'è fretta)\b", re.I)
 CHANGE = re.compile(r"\b(also|and also|instead|rather|only|but|actually|make it|change|switch to|add|include|exclude|not|no more than|max(imum)?|min(imum)?|under|below|above|cheaper|in italy|europe|anche|invece|solo|cambia|"
                     r"don'?t forget|remember (to|the)|make sure|be sure|focus on|prefer|preferably|skip|leave out|ignore|without|non dimenticare|ricordati)\b", re.I)
@@ -401,10 +402,35 @@ class Mind:
         """What does a message *during a job* mean? → ('status'|'why'|'hurry'|'stop'|'chat'|'change'|'new', reply_or_None)."""
         t = text.strip()
         if STOP.search(t) and len(t.split()) <= 4:
+            if self.job and self.job.get("stop_asked") and time.time() - self.job["stop_asked"] < 90:
+                self.job["stop_again"] = self.job.get("stop_again", 0) + 1
+                return "stop_again", ("Still stopping — I'm closing the page I'm on and hand over what I have in a moment (no new pages are opened). "
+                                      "If nothing arrives within a minute, say 'stop' once more and I drop the result altogether.")
+            if self.job:
+                self.job["stop_asked"] = time.time()
             return "stop", None
         if STATUS_Q.search(t):
             return "status", self.status_line()
-        if HURRY.search(t):
+        unquoted = re.sub(r"[\"“”'‘’]([^\"“”'‘’]{1,40})[\"“”'‘’]", " ", t)          # 'you put "quick" as timing' talks about the word
+        if SLOW_DOWN.search(unquoted) or (re.search(r"\b(said|told you|ho detto)\b", t, re.I) and re.search(r"\b(slow|hours?|ore)\b", t, re.I)):
+            floor = budget = None
+            try:
+                from .brief import parse_pace
+                pp = parse_pace(t)
+                floor, budget = pp.get("floor_min"), pp.get("budget_min")
+            except Exception:
+                pass
+            if self.job:
+                self.job["hurry"] = False
+            if self.pace:
+                try:
+                    self.pace.slow_now(floor, budget)
+                except Exception:
+                    pass
+            span = (f" — at least {floor // 60} h" + (f" {floor % 60} min" if floor % 60 else "") if floor else "")
+            span += (f", up to {budget // 60} h" if budget and budget != floor else "")
+            return "hurry", f"Slowing down{span}: I take the long path from here (more listings, full reviews) and keep going until the time is used. Nothing is rushed."
+        if HURRY.search(unquoted):
             if self.job:
                 self.job["hurry"] = True
             if self.pace:
@@ -467,6 +493,10 @@ class Mind:
 
     def _lesson(self, j, outcome, delivered, late, note):
         snags = " ".join(j["snags"]).lower()
+        if not delivered and re.search(r"is not a web address|ERR_NAME_NOT_RESOLVED at https?://\w+ ", outcome or note or "", re.I):
+            return f"{j['kind']}: I treated plain words as a web address — that was a planning slip, not a site problem; the plan step should have been an answer."
+        if j.get("stop_again") or (j.get("stop_asked") and not delivered):
+            return f"{j['kind']}: the owner had to say stop more than once — check the stop flag between every page, not only between listings."
         if not delivered:
             if self.machine_fault(outcome or note):
                 what = "the browser is not installed" if re.search(r"BrowserType\.launch|Executable doesn't exist|playwright install", outcome or note, re.I) else \
@@ -482,8 +512,9 @@ class Mind:
             return f"{j['kind']}: delivered but late by my own clock — open fewer pages up front, write earlier, refine only if time is left."
         if j.get("hurry"):
             return f"{j['kind']}: the owner had to hurry me — send a first usable version sooner, then improve."
-        if len(j["snags"]) >= 3:
-            return f"{j['kind']}: many snags ({j['snags'][0][:50]}…) — check the site's walls before planning around it."
+        site_snags = [x for x in j["snags"] if not re.search(r"^owner (said|changed)", x)]
+        if len(site_snags) >= 3:
+            return f"{j['kind']}: many snags ({site_snags[0][:50]}…) — check the site's walls before planning around it."
         cyc = j.get("cycle", [])
         if self.planner and self.planner.installed() and (j["done"] or cyc):
             try:

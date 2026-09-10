@@ -378,7 +378,8 @@ class Talk:
         if self.AWAY.match(t) and not re.search(r"\b(research|find|check|compare|build|write|look|cerca|trova)\b", low):
             return {"away": self._away_minutes(t), "text": self.away_line(t)}
         if self.LAST_DOC.search(t) or self.LAST_DOC_IT.search(t):
-            return {"last_doc": True, "to_drive": bool(re.search(r"\b(drive|google|upload|carica)\b", low))}
+            return {"last_doc": True, "to_drive": bool(re.search(r"\b(drive|google|upload|carica)\b", low)),
+                    "as_pdf": bool(re.search(r"\bpdf\b", low))}
         if self.PLATE.match(t):
             return self.plate()
         if self.INBOX_Q.search(t) and self.inbox is not None and not re.search(r"https?://|\b(abandoned|cart|newsletter|campaign|marketing)\b", low):
@@ -661,7 +662,7 @@ class Talk:
                 f". What slowed it: {why}. Lesson I kept: {r.get('lesson') or 'none'}. Next time say a time limit and I trim the checks to fit.")
 
     CITY_TZ = {"milan": "Europe/Rome", "milano": "Europe/Rome", "rome": "Europe/Rome", "roma": "Europe/Rome", "italy": "Europe/Rome", "italia": "Europe/Rome",
-               "london": "Europe/London", "londra": "Europe/London", "uk": "Europe/London", "england": "Europe/London", "paris": "Europe/Paris", "parigi": "Europe/Paris", "berlin": "Europe/Berlin", "berlino": "Europe/Berlin", "germany": "Europe/Berlin",
+               "london": "Europe/London", "londra": "Europe/London", "uk": "Europe/London", "england": "Europe/London", "ireland": "Europe/Dublin", "dublin": "Europe/Dublin", "paris": "Europe/Paris", "parigi": "Europe/Paris", "berlin": "Europe/Berlin", "berlino": "Europe/Berlin", "germany": "Europe/Berlin",
                "madrid": "Europe/Madrid", "spain": "Europe/Madrid", "lisbon": "Europe/Lisbon", "lisbona": "Europe/Lisbon", "portugal": "Europe/Lisbon", "amsterdam": "Europe/Amsterdam", "athens": "Europe/Athens", "istanbul": "Europe/Istanbul", "moscow": "Europe/Moscow",
                "new york": "America/New_York", "nyc": "America/New_York", "ny": "America/New_York", "boston": "America/New_York", "miami": "America/New_York", "toronto": "America/Toronto", "chicago": "America/Chicago", "texas": "America/Chicago", "dallas": "America/Chicago",
                "denver": "America/Denver", "los angeles": "America/Los_Angeles", "la": "America/Los_Angeles", "san francisco": "America/Los_Angeles", "california": "America/Los_Angeles", "seattle": "America/Los_Angeles", "vancouver": "America/Vancouver",
@@ -673,11 +674,19 @@ class Talk:
 
     def clock(self, place):
         """'what time is it in shenzhen?' → the local time there and the gap to the owner's clock (supplier chat hours matter)."""
-        import zoneinfo
-        here = _dt.datetime.now().astimezone()
+        import zoneinfo, os
+        try:                                                               # the owner's clock, not the machine's (a server may run on UTC)
+            here = _dt.datetime.now(zoneinfo.ZoneInfo(os.environ.get("OWNER_TZ") or "Europe/Rome"))
+        except Exception:
+            here = _dt.datetime.now().astimezone()
         if not place:
             return f"It's {here:%H:%M} here ({here:%A %d %B})."
-        key = place.strip().lower().rstrip("?.! ")
+        key = re.sub(r"^(the|in|at|a|il|la|le|los|las|el|l')\s+", "", place.strip().lower().rstrip("?.! ")).strip()
+        key = {"united kingdom": "uk", "great britain": "uk", "britain": "uk", "scotland": "uk", "wales": "uk", "regno unito": "uk", "inghilterra": "uk", "ireland": "ireland", "irlanda": "ireland",
+               "united states": "new york", "usa": "new york", "us": "new york", "america": "new york", "stati uniti": "new york", "east coast": "new york", "west coast": "los angeles",
+               "europe": "milan", "europa": "milan", "germania": "germany", "francia": "paris", "spagna": "madrid", "olanda": "amsterdam", "netherlands": "amsterdam", "holland": "amsterdam", "grecia": "athens", "greece": "athens", "turchia": "istanbul", "turkey": "istanbul",
+               "giappone": "japan", "corea": "seoul", "korea": "seoul", "south korea": "seoul", "thailandia": "bangkok", "thailand": "bangkok", "vietnam": "bangkok", "hanoi": "bangkok", "indonesia": "bangkok", "jakarta": "bangkok", "philippines": "hong kong", "manila": "hong kong",
+               "egitto": "cairo", "egypt": "cairo", "marocco": "cairo", "morocco": "lisbon", "nigeria": "lagos", "south africa": "johannesburg", "sudafrica": "johannesburg", "kenya": "nairobi", "brasile": "brazil", "argentina": "buenos aires", "messico": "mexico", "canada": "toronto", "pakistan": "dubai", "uae": "dubai", "emirates": "dubai", "emirati": "dubai", "qatar": "dubai", "saudi arabia": "dubai", "israel": "athens", "russia": "moscow", "poland": "berlin", "polonia": "berlin", "austria": "berlin", "switzerland": "berlin", "svizzera": "berlin", "belgium": "paris", "belgio": "paris", "sweden": "berlin", "svezia": "berlin", "norway": "berlin", "denmark": "berlin", "finland": "athens", "romania": "athens", "bulgaria": "athens", "ukraine": "athens", "czechia": "berlin", "czech republic": "berlin", "hungary": "berlin", "croatia": "berlin", "croazia": "berlin", "new zealand": "auckland", "nuova zelanda": "auckland"}.get(key, key)
         tz = self.CITY_TZ.get(key)
         if not tz:
             cand = [z for z in zoneinfo.available_timezones() if key.replace(" ", "_") in z.lower()]
@@ -693,7 +702,9 @@ class Talk:
             tip = " — it's night there, so don't expect a reply from a supplier before their morning."
         elif 9 <= there.hour < 18 and there.weekday() < 5:
             tip = " — office hours there, a good moment to message a supplier."
-        return f"In {place.strip().title()} it's {there:%H:%M}{day} — {gap}{tip}"
+        shown = re.sub(r"^(the|in|at)\s+", "", place.strip(" ?.!"), flags=re.I)
+        shown = shown.upper() if shown.lower() in ("uk", "usa", "us", "uae", "nyc", "la") else shown.title()
+        return f"In {'the ' if shown in ('UK', 'USA', 'US', 'UAE', 'United Kingdom', 'United States', 'Netherlands') else ''}{shown} it's {there:%H:%M}{day} — {gap}{tip}"
 
     OPINIONS = {
         ("shopify", "woocommerce"): ("Shopify if you want to be selling this week and not touch servers: hosted, ~€ 27–36/month plus 2 % transaction fee unless you use Shopify Payments, apps for everything, support 24/7. "
