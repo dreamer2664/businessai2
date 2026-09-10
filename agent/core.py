@@ -3102,8 +3102,12 @@ class Agent:
         g = self.google
         if g.needs_reconnect and time.time() - self.google_reconnect_told > 86400:
             self.google_reconnect_told = time.time()
-            if getattr(g, "client_disabled", False):
-                self.notify("🔑 " + g.last_error + " Until then Drive, Docs and the mailbox are paused (nothing is lost).")
+            if getattr(g, "client_disabled", False) or (getattr(g, "token", {}) or {}).get("dead"):
+                if not self.state.get("google_dead_told"):           # once, not daily: Google is optional now (my mailbox is IMAP)
+                    self.state["google_dead_told"] = True
+                    self._save_state()
+                    self.notify("🔑 The Google connection is dead (the old client was disabled). That's fine: my e-mail runs over IMAP now; Google Docs/Drive links stay off "
+                                "unless you connect another Google account one day with 'connect google'. I won't mention it again.")
             else:
                 self.notify("🔑 Google cut my Drive/Gmail connection (it does that every 7 days for private apps). " + self.google_command("connect"))
 
@@ -3177,8 +3181,16 @@ class Agent:
         return (now or time.time()) - getattr(self, "_progress", time.time()) > self.WATCHDOG_LIMIT
 
     def _watchdog(self):
+        last = time.time()
         while True:
             time.sleep(30)
+            now = time.time()
+            if now - last > 120:                                   # the clock jumped far more than my 30 s nap: the PC was asleep, not the loop wedged
+                self.log("machine_slept", seconds=int(now - last))
+                self._progress = now
+                last = now
+                continue
+            last = now
             if self._watchdog_fired():
                 try:
                     self.log("watchdog_restart", stuck_s=int(time.time() - self._progress))

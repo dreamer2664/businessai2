@@ -44,7 +44,7 @@ class StubGoogle(Google):
         self.label_list = [{"name": "INBOX", "id": "INBOX"}, {"name": "Leads", "id": "Label_7"}]
         self.inbox = list(INBOX)
 
-    def connected(self): return True
+    def connected(self): self.client_disabled = False; self.needs_reconnect = False; return True   # a healthy Google, whatever token file this machine has
     def account(self): return "bot@gmail.com"
 
     def _req(self, url, method="GET", data=None, headers=None, raw=False, timeout=60):

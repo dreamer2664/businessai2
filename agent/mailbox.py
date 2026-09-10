@@ -83,7 +83,12 @@ class Mailbox:
 
     def connected(self):
         try:
-            return bool(self.google and self.google.connected())
+            g = self.google
+            if not g:
+                return False
+            if not g.connected():
+                return False
+            return not getattr(g, "client_disabled", False)          # connected() already honours a dead token; a disabled client is never "on"
         except Exception:
             return False
 

@@ -465,3 +465,7 @@ sites: search URLs, JSON shapes, walls, traps, judging deals, browsing gently). 
 (Italian + marketplace vocabulary counts as informative; second-person how-to is not a story; the handbook's URLs are kept).
 Temu shows nothing to a visitor (even policies redirect to login) → Temu knowledge is third-party only. Score set tests/marketplaces.txt: **40/40**; 1.3 MB; published on the GitHub Release as marketplaces.kdw
 (`Brain.RELEASE_PACKS` + get_brain.sh fetch it — the PC gets it on the next start, no owner step).
+- (PC log 2026-09-10 18:54) a watchdog restart after "7948 s stuck" while nothing ran: the PC/WSL had slept; the watchdog now
+  detects a clock jump (> 120 s between its 30-s naps) and resets progress instead of exiting. The dead Google token no longer
+  triggers a fallback poll / a 401 at every start (`fallback.gmail_ready`, `mailbox.connected` honour a disabled client), and the
+  daily "🔑 Google disabled…" nag became a single "Google is optional now" line (`state.google_dead_told`).

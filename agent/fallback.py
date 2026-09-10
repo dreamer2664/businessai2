@@ -119,7 +119,12 @@ class Fallback:
         return set(env) | {a.lower() for a in self.state["allowed"]}
 
     def gmail_ready(self):
-        return bool(self.google and self.google.connected() and self.owner_addresses())
+        g = self.google
+        if not g or not self.owner_addresses():
+            return False
+        if not g.connected() or getattr(g, "client_disabled", False):
+            return False                                          # a known-dead token / disabled client: no poll, no 401 every start
+        return True
 
     def due(self):
         return self.gmail_ready() and time.time() - self.state["last_poll"] >= self.interval
