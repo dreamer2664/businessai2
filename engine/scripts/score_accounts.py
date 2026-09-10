@@ -116,16 +116,19 @@ ok4, note4 = T.on_hands(run4, timeout=30)
 check("refuses money sites", not ok4 and "never-sign-up" in note4, note4)
 # ---- the owner's rule: picture puzzles → one tap from the owner, at most 5 attempts per site per day, session kept ----
 taps = []
-A5 = Accounts(google=FakeGoogle(), log=lambda k, **f: None, notify=lambda t: notes.append(t), ask=lambda q, opts=None, t=0: (taps.append(q), "Skip it")[1])
+A5 = Accounts(google=FakeGoogle(), log=lambda k, **f: None, notify=lambda t: notes.append(t), ask=lambda q, opts=None, t=0: (taps.append(q), "Done")[1])   # the owner taps Done but the puzzle still fails
 A5.notify_photo = lambda jpeg, cap: notes.append("photo:" + cap[:20])
 check("captcha budget starts at 5 per site per day", A5.captcha_budget("shein.com") == 5)
 for i in range(5):
     A5.captcha_fallback("shein.com", "https://it.shein.com/x", timeout=1, screenshot=b"x")
     A5.captcha_spent("shein.com", False)
-check("five failed attempts → budget 0, the owner was asked 5 times with the attempt number", A5.captcha_budget("shein.com") == 0 and len(taps) == 5 and "attempt 5 of 5" in taps[-1], (A5.captcha_budget("shein.com"), len(taps)))
+check("five failed attempts → budget 0, the owner was asked 5 times, the last question says 1 tap left", A5.captcha_budget("shein.com") == 0 and len(taps) == 5 and "1 tap(s) left today" in taps[-1], (A5.captcha_budget("shein.com"), len(taps), taps[-1][:120]))
 r6 = A5.captcha_fallback("shein.com", "https://it.shein.com/x", timeout=1)
 check("sixth attempt refused with an honest line, no question asked", r6 is False and len(taps) == 5 and any("leave it alone until tomorrow" in n for n in notes), notes[-1:])
-check("another site still has its own budget", A5.captcha_budget("temu.com") == 5)
+check("another site still has its own budget", A5.captcha_budget("banggood.com") == 5)
+A5.ask = lambda q, opts=None, t=0: (taps.append(q), "Skip it")[1]
+A5.captcha_fallback("temu.com", "https://www.temu.com/x", timeout=1); A5.captcha_spent("temu.com", False)
+check("'Skip it' spends no attempt (the owner chose to skip, nothing failed)", A5.captcha_budget("temu.com") == 5, A5.captcha_budget("temu.com"))
 check("the puzzle picture was sent to the owner before the question", any(n.startswith("photo:") for n in notes))
 def run5():
     b = T.browser()

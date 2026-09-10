@@ -165,9 +165,54 @@ class Browser:
         self.page = self._ctx.new_page()
         self.items = []
         self.history = []
+        self.xhr = []                       # the JSON answers the page fetched for itself (single-page apps): [(url, status, text)]
+        self._xhr_on = False
+        self._install_xhr_tap()
         self.last_used = time.time()
         if self.viewer:
             self.viewer.browser_open = True
+
+    def _install_xhr_tap(self):
+        """Keep the JSON responses a page loads (search APIs of Wallapop, Temu, Shein, Vinted …) — up to 40 per page, 400 KB each.
+        Read-only: nothing is modified or replayed."""
+        def on_response(resp):
+            if not self._xhr_on:
+                return
+            try:
+                ct = (resp.headers.get("content-type") or "").lower()
+                if "json" not in ct or resp.request.resource_type not in ("xhr", "fetch"):
+                    return
+                if len(self.xhr) >= 40:
+                    return
+                url = resp.url
+                self.xhr.append((url, resp.status, None, resp))
+            except Exception:
+                pass
+        try:
+            self.page.on("response", on_response)
+            self._xhr_on = True
+        except Exception:
+            pass
+
+    def xhr_json(self, pattern=r".", min_bytes=200):
+        """The captured JSON bodies whose url matches `pattern` (newest first), parsed. Bodies are fetched lazily."""
+        import json as _j
+        out = []
+        for url, status, body, resp in reversed(self.xhr):
+            if not re.search(pattern, url, re.I) or status != 200:
+                continue
+            if body is None:
+                try:
+                    body = resp.text()
+                except Exception:
+                    continue
+            if len(body) < min_bytes:
+                continue
+            try:
+                out.append((url, _j.loads(body)))
+            except Exception:
+                continue
+        return out
 
     def park(self):
         """Free the page's memory (navigate to about:blank) while the agent thinks; the tab stays open."""
@@ -285,6 +330,7 @@ class Browser:
         if not re.match(r"^(https?)://(?:[\w-]+(?:\.[\w-]+)*\.[a-z]{2,63}|localhost|\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-f:]+\])(?::\d+)?(?:[/?#]|$)|^file:///", url, re.I):
             raise BrowserError(f"'{url[8:60]}' is not a web address — nothing to open")   # never 'https://slow down'
         self._check(url)
+        self.xhr = []
         t0 = time.time()
         for attempt in (1, 2):
             try:

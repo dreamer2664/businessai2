@@ -469,3 +469,26 @@ Temu shows nothing to a visitor (even policies redirect to login) → Temu knowl
   detects a clock jump (> 120 s between its 30-s naps) and resets progress instead of exiting. The dead Google token no longer
   triggers a fallback poll / a 401 at every start (`fallback.gmail_ready`, `mailbox.connected` honour a disabled client), and the
   daily "🔑 Google disabled…" nag became a single "Google is optional now" line (`state.google_dead_told`).
+
+## 2026-09-10 — the owner's "cheapest FM radio, max 5 € including shipping" test — done
+What the transcript showed and the fixes:
+- The item became "fm radio you can find" → every search carried the owner's words. `brief.clean_item_name()` strips the
+  talking around a product ("the cheapest … you can find", "a good used …", "più economico che trovi") in en + it; single-item
+  requests with named sites ("look for a used kindle on vinted, subito e wallapop") are deal hunts, not seller checks;
+  supplier / seller / alibaba requests stay seller checks.
+- "max 5 € including shipping" typed as a change now sets the cap on the items and marks it **all-in**: `deals.landed()` adds the
+  card's shipping when stated, else the site's usual (Vinted 2.95, Subito 4.90, Wallapop 3.99, China shops 0 above their minimum);
+  the cap is applied to the landed price; the summary shows "€ 3.85 (+ € 2.95 shipping ≈ € 6.80 all-in)".
+- Nothing under the cap → the nearest real listings above it are kept ("closest above your limit", with link; a section in the
+  document) so the owner can decide in one glance instead of asking again.
+- Vinted cheapest-first starts at €3 (`price_from`): below that it is placeholders and junk; relevance pass first, then cheapest.
+  Accessory list learned antenna / transmitter / cd / book; synonyms for fm / radio / portatile / speaker / charger / cable.
+- Sites that need a login or a puzzle (Temu, Shein) run **last**, so the free sites answer first; the puzzle question waits
+  150 s (was 240/180) and says "no answer = skip"; "Skip it" spends no daily attempt; one login attempt per site per job (a
+  second call returns the first answer); "🔑 Logging in to temu.com with the account you gave me" instead of "creating an account".
+- `Browser` now taps the JSON a page fetches for itself (`xhr`, `xhr_json()`), and `deals.json_cards()` reads search results
+  from it when the DOM has no cards (SPA sites: Wallapop's api/v3, Shein goods_list, Temu goodsList) — generic, keyed on
+  title/price/url fields, item-url patterns per site. Wallapop still 403s the sandbox's address (CloudFront) — the PC will tell.
+- No "temu: temu: …" double prefixes; `{cap:g}` formatting (€ 5, not € 5.0).
+- Live re-run of the exact request: Vinted + Banggood read, 14 matches all over € 5 all-in, "real ones start around € 7",
+  closest above the limit named with link; Shein rate-limited, Temu skipped (no tap in the sandbox), Wallapop 403 — all honest.

@@ -994,7 +994,7 @@ class Tasks:
                     shot = b.page.screenshot(type="jpeg", quality=70, timeout=6000)
                 except Exception:
                     pass
-                if acc.captcha_fallback(site, url, timeout=180, b=b, screenshot=shot):
+                if acc.captcha_fallback(site, url, timeout=150, b=b, screenshot=shot):
                     if self._wall_cleared(b, url):
                         passed = True
             except Exception as e:

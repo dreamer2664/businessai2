@@ -151,3 +151,11 @@ Reality check on 2026-09-09 with the real browser:
   doesn't need an account to search; Temu is the one that truly needs it; Shein for fewer puzzles.
 - **Training**: a new knowledge pack about Vinted, Subito, Wallapop, Temu, Shein, AliExpress, DHgate, Banggood, EU rules and
   scam patterns — from the sites' own help pages, guides, Wikipedia and 15 video walkthroughs boiled down to the teaching.
+
+## 2026-09-10 — your "cheapest FM radio, max 5 € including shipping" test
+- It searched for "fm radio you can find" — your words, not the product. Fixed: it now strips the talking around the item.
+- "including shipping" is understood: the € 5 cap applies to price + shipping, and when nothing fits it shows the closest real
+  listing above your limit with the all-in price, so you can say "ok, 7 then" without a new search.
+- Temu/Shein now run last, so Vinted/Banggood answers don't wait 4 minutes for a puzzle. The puzzle question waits 2½ min then
+  skips; skipping costs nothing. When you are at the PC, one tap on the Chrome window logs Temu in and the session is kept.
+- Wallapop blocks my sandbox's address; from your PC it should read (the bot now also reads the site's own search JSON).

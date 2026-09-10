@@ -1112,7 +1112,7 @@ class Agent:
                 m_max = re.search(r"\b(?:max|under|below|sotto|entro)\s*€?\s*(\d{1,5})", low)
                 if m_max:
                     it["max"] = int(m_max.group(1))
-                for k_ in ("_seen", "_min", "_min_clean", "_over_cap", "_near"): it.pop(k_, None)
+                for k_ in ("_seen", "_min", "_min_clean", "_over_cap", "_over_cards", "_nearest", "_near"): it.pop(k_, None)
             from .brief import parse_duration
             dur = m_w.group("dur") or ""
             md = re.match(r"(\d+)\s*(days?|giorni)", dur)
@@ -1968,7 +1968,7 @@ class Agent:
                 if m and re.search(r"facebook|marketplace|local|nearby|vicino", str(c), re.I):
                     city = m.group(1).strip().title()
             sites = list(b.get("sites") or ())
-            path, summary, results = self.tasks.on_hands(self.deals.run, b["items"], sites, city, 4, True, timeout=3000)
+            path, summary, results = self.tasks.on_hands(self.deals.run, b["items"], sites, city, 4, True, bool(b.get("max_total")), timeout=3000)
             self._last_deals = results
             self._last_sites = sites
             link = ""

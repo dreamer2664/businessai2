@@ -323,6 +323,10 @@ class Accounts:
         if a and a["status"] in ("blocked", "pending", "failed") and a.get("email") == self.id.email and not self.site_creds(url):
             a = None                                                    # an earlier try stopped at a puzzle / a code: not final — try again now
         if a and a["status"] == "active":
+            told = getattr(self, "_login_told", set())
+            if self.site_creds(url) and not getattr(self, "_quiet", False) and a["site"] not in told and not self.is_local(url):
+                told.add(a["site"]); self._login_told = told                 # once per site per run, never on my practice stages
+                self.notify(f"🔑 Logging in to {a['site']} with the account you gave me ({a.get('email') or self.id.email}).")
             ok, note = self.login(b, url)
             if ok:
                 return True, "logged in"
@@ -486,6 +490,15 @@ class Accounts:
 
     def login(self, b, url):
         site = self.site_of(url)
+        recent = getattr(self, "_login_recent", {}).get(site)
+        if recent and time.time() - recent[0] < 1800 and not recent[1]:
+            return False, recent[2] + " (not retried — same job, same answer; I try again on the next job)"
+        ok, note = self._login(b, url, site)
+        self._login_recent = getattr(self, "_login_recent", {})
+        self._login_recent[site] = (time.time(), ok, note)
+        return ok, note
+
+    def _login(self, b, url, site):
         try:
             creds = self.site_creds(url) or {}
             start = creds.get("login") or LOGIN_URLS.get(site) or LOGIN_URLS.get(re.sub(r"^(www|it|m)\.", "", site)) or url
@@ -496,7 +509,9 @@ class Accounts:
                     b.click(it["n"])
                     break
             filled, _ = self._fill_visible_form(b, max_fields=3)
-            if not any(re.search(r"pass", f, re.I) for f in filled):
+            if filled and not any(re.search(r"pass", f, re.I) for f in filled) and any(re.search(r"mail|telefono|phone", f, re.I) for f in filled):
+                pass                                                         # an e-mail-first login (Temu, Shein): submit and the password step follows
+            elif not any(re.search(r"pass", f, re.I) for f in filled):
                 for path in ("/login", "/signin", "/sign-in", "/account/login", "/users/sign_in", "/accedi"):
                     try:
                         b.open(f"{self._base(url)}{path}")
@@ -686,7 +701,7 @@ class Accounts:
                 shot = b.page.screenshot(type="jpeg", quality=70, timeout=6000)
             except Exception:
                 pass
-            if self.captcha_fallback(site, url, timeout=240, b=b, screenshot=shot):
+            if self.captcha_fallback(site, url, timeout=150, b=b, screenshot=shot):
                 time.sleep(1.5)
                 passed = b.status() != "captcha" and not self._puzzle_shown(b)
         self.captcha_spent(site, passed)
@@ -708,6 +723,9 @@ class Accounts:
         return max(0, self.CAPTCHA_DAILY_MAX - int(rec.get("n", 0)))
 
     def captcha_spent(self, site, passed):
+        if not passed and site in getattr(self, "_skipped_today", set()):
+            self._skipped_today.discard(site)
+            return                                                       # the owner chose to skip: no attempt was spent
         day = time.strftime("%Y-%m-%d")
         tries = self.data.setdefault("captcha_tries", {})
         rec = tries.get(site) or {}
@@ -733,7 +751,10 @@ class Accounts:
             except Exception:
                 pass
         view = os.environ.get("BAI_VIEW_URL") or f"http://localhost:{os.environ.get('BAI_VIEW_PORT', '8765')}"
-        ans = self.ask(f"🧩 {site} shows a picture puzzle I can't solve (attempt {self.CAPTCHA_DAILY_MAX - left + 1} of {self.CAPTCHA_DAILY_MAX} today). "
-                       f"Could you solve it for me? Open my live screen ({view}) or the Chrome window on the PC, do the puzzle, then tap Done. I keep the session afterwards, so it should not ask again for a while.",
+        ans = self.ask(f"🧩 {site} shows a picture puzzle before letting me in (a one-time thing per session: {left} tap(s) left today). "
+                       f"Please solve it in the Chrome window on the PC (or my live screen {view}), then tap Done — I keep the session so it should not come back for a while. "
+                       f"Skip it = I leave {site} out of this job. (No answer in {timeout // 60} min = skip.)",
                        ["Done", "Skip it"], timeout)
+        if ans != "Done":
+            self._skipped_today = getattr(self, "_skipped_today", set()) | {site}
         return ans == "Done"

@@ -879,12 +879,17 @@ def vinted_api(b, path, params=None, throttle=None):
         return None
 
 
-def vinted_search_api(b, query, limit=8, price_to=None, order="relevance", throttle=None, page=1):
+def vinted_search_api(b, query, limit=8, price_to=None, order="relevance", throttle=None, page=1, price_from=None):
     """Catalog search via the page's own JSON: richer cards (seller, total, condition, size). [] when unavailable.
-    order: relevance | price_low_to_high | newest_first; page: 1-based."""
+    order: relevance | price_low_to_high | newest_first; page: 1-based. Cheapest-first starts at €3 unless told otherwise:
+    below that the catalog is placeholders (€1 = 'make me an offer') and stray junk."""
     params = {"search_text": query, "order": order, "per_page": min(max(limit, 1), 40), "page": max(1, int(page)), "currency": "EUR"}
     if price_to:
         params["price_to"] = f"{float(price_to):g}"
+    if price_from is None and order == "price_low_to_high":
+        price_from = 3
+    if price_from:
+        params["price_from"] = f"{float(price_from):g}"
     data = vinted_api(b, "/catalog/items", params, throttle)
     return parse_vinted_api(data, limit) if data else []
 

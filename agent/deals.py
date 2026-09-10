@@ -20,6 +20,7 @@ from .library import Doc
 
 # what a card must look like to be "the item" and not a part of it
 ACCESSORY = re.compile(r"\b(custodi[ae]|cases?|cover|cavo|cavi|cables?|caricator[ei]|chargers?|alimentatore|adattator[ei]|adapters?|pellicol[ae]|screen protectors?|supporto|stand|dock|grip|"
+                       r"antenn[ae]|antennas?|trasmettitore|transmitter|transmetteur|telecomando|remote|manopol[ae]|knobs?|cd|cds|dvd|vinile|vinyl|libro|book|rivista|magazine|"
                        r"filtr[oi]|filters?|spazzol[ae]|brush(es)?|testina|tubo|ricambi|compatibil[ei]|compatible|kit|set di|ricarica|hanger|gancio|staffa|wall mount|"
                        r"bocchetta|beccuccio|nozzle|attachment|accessorio|serbatoio|tank|motore|motor|scheda|board|display|schermo|screen|vetro|glass|"
                        r"controller|joy-?con|gioco|game|giochi|games|skin|sticker|manuale|scatola|box only|solo scatola|ricambio|parts?|pezzi|batteria|battery|"
@@ -78,10 +79,14 @@ SOFT = re.compile(r"^(\d{2,4}gb|\d{1,2}tb|\d{2,3}cm|\d{2}|taglia|size|tg|colore|
                   r"da|di|a|il|la|le|lo|gli|of|in|corsa|città|city|mtb|elettrica|electric|usato|usata|used|nuovo|nuova|new|ottimo|buono)$", re.I)   # details, not the identity
 
 
-SYNONYMS = {"bici": ("bicicletta", "bike", "mtb"), "bicicletta": ("bici", "bike"), "bike": ("bici", "bicicletta"), "tv": ("televisore", "televisione", "smart tv"),
-            "televisore": ("tv",), "frigo": ("frigorifero",), "lavatrice": ("lavabiancheria",), "pc": ("computer", "desktop"), "portatile": ("laptop", "notebook"),
-            "laptop": ("portatile", "notebook"), "cuffie": ("headphones", "auricolari"), "scarpe": ("sneakers", "shoes"), "orologio": ("watch",), "cellulare": ("smartphone", "telefono"),
-            "telefono": ("smartphone", "cellulare"), "zaino": ("backpack",), "divano": ("sofa", "sofà"), "giacca": ("jacket", "giubbotto"), "controller": ("joystick", "pad", "dualshock", "dualsense", "gamepad"),
+SYNONYMS = {"fm": ("am/fm", "fm/am", "amfm", "radiofm"), "radio": ("radiolina", "radiosveglia", "autoradio"), "portable": ("portatile", "tascabile"),
+            "speaker": ("cassa", "altoparlante", "casse"), "cassa": ("speaker", "altoparlante"), "auricolari": ("earphones", "earbuds", "cuffie"),
+            "caricatore": ("charger", "alimentatore", "caricabatterie"), "charger": ("caricatore", "caricabatterie"), "cavo": ("cable", "cavetto"), "cable": ("cavo", "cavetto"),
+            "borraccia": ("bottle", "thermos"), "lampada": ("lamp", "luce"), "lamp": ("lampada",),
+            "tastiera": ("keyboard",), "keyboard": ("tastiera",), "mouse": ("mouse wireless", "mouse ottico"), "ventilatore": ("fan",), "fan": ("ventilatore",), "bilancia": ("scale",),"bici": ("bicicletta", "bike", "mtb"), "bicicletta": ("bici", "bike"), "bike": ("bici", "bicicletta"), "tv": ("televisore", "televisione", "smart tv"),
+            "televisore": ("tv",), "frigo": ("frigorifero",), "lavatrice": ("lavabiancheria",), "pc": ("computer", "desktop"), "portatile": ("laptop", "notebook", "portable", "tascabile"),
+            "laptop": ("portatile", "notebook"), "cuffie": ("headphones", "auricolari", "earphones"), "scarpe": ("sneakers", "shoes"), "orologio": ("watch", "smartwatch"), "cellulare": ("smartphone", "telefono"),
+            "telefono": ("smartphone", "cellulare"), "zaino": ("backpack", "zainetto"), "divano": ("sofa", "sofà"), "giacca": ("jacket", "giubbotto"), "controller": ("joystick", "pad", "dualshock", "dualsense", "gamepad"),
             "aspirapolvere": ("scopa elettrica", "vacuum"), "monopattino": ("scooter",), "macchina fotografica": ("fotocamera",), "fotocamera": ("camera", "macchina fotografica")}
 
 
@@ -196,6 +201,26 @@ def rank_key(card, name, ref_price=None):
     return (penalty, total)
 
 
+# what delivery adds on top of the price when the card does not say (Italy, 2026): used to honour "max € N including shipping"
+SHIP_GUESS = {"vinted": 2.95, "subito": 4.90, "wallapop": 3.99, "temu": 0.0, "shein": 0.0, "aliexpress": 0.0, "banggood": 2.50, "dhgate": 3.00, "ebay": 4.00, "amazon": 0.0, "facebook marketplace": 0.0}
+
+
+def landed(card):
+    """The all-in price a buyer pays: Vinted 'total' already has the protection fee; shipping from the card when it says a number,
+    else the site's usual (free on the China shops above their small minimum, Vinted/Subito/Wallapop tracked shipping)."""
+    base = card.get("total") or card.get("price") or 0
+    ship = None
+    m = re.search(r"(\d+(?:[.,]\d{1,2}))\s*€|€\s*(\d+(?:[.,]\d{1,2})?)", str(card.get("shipping") or ""))
+    if m:
+        ship = float((m.group(1) or m.group(2)).replace(",", "."))
+    elif re.search(r"free|gratis|gratuit", str(card.get("shipping") or ""), re.I):
+        ship = 0.0
+    if ship is None:
+        ship = SHIP_GUESS.get(card.get("site"), 3.0)
+    card["_ship"] = ship
+    return round(base + ship, 2)
+
+
 def city_ok(card, city):
     if not city:
         return True
@@ -290,7 +315,7 @@ class DealHunter:
         depth ≥ 2 also reads the site's cheapest-first order; depth 3 adds a second page of it."""
         name, mx = item["name"], item.get("max")
         if site in markets.SEARCH:
-            passes = [(None, 1)] if depth <= 1 else ([("price", 1), (None, 1)] if depth == 2 else [("price", 1), ("price", 2), (None, 1)])
+            passes = [(None, 1)] if depth <= 1 else ([(None, 1), ("price", 1)] if depth == 2 else [(None, 1), ("price", 1), ("price", 2), ("newest", 1)])
             out, note, seen = [], "", set()
             for order, page in passes:
                 if self._stopped():
@@ -386,24 +411,39 @@ class DealHunter:
             self.throttle.punish(url)
             return [], f"{site}: blocks this machine (an error page instead of results) — it may work from your PC"
         try:
+            time.sleep(1.5)                                                # single-page apps draw the results after the page 'loaded'
             cards = generic_cards(b, site, limit)
+            if not cards:
+                cards = json_cards(b, site, limit)                         # the search API the page called for itself
         except Exception as e:
             return [], f"{site}: could not read the results ({str(e)[:40]})"
         if not cards:
+            body = ""
+            try:
+                body = b.page.inner_text("body")[:2000]
+            except Exception:
+                pass
+            if re.search(r"nessun risultato|no results|0 risultati|non abbiamo trovato|nothing found|non ci sono annunci", body, re.I):
+                return [], f"{site}: no listings for these words"
             return [], f"{site}: no listings I could read (blocked or a layout I don't know yet)"
         return cards, ""
 
     # ---- the whole list ------------------------------------------------------------
-    def run(self, items, sites=(), city=None, per_item=4, want_doc=True):
+    max_total = False               # "max € N including shipping" → the cap is on the landed price
+
+    def run(self, items, sites=(), city=None, per_item=4, want_doc=True, max_total=None):
         """items: [{'name', 'max'}]; sites: the owner's list (unknown → skipped with a note); city: for Facebook-only-if-local.
         Returns (doc path or None, summary text, per-item results)."""
         t0 = time.time()
         sites = [s for s in (sites or ("vinted", "subito")) if s in KNOWN_SITES] or ["vinted", "subito"]
+        sites = sorted(sites, key=lambda s_: (s_ in NEEDS_ACCOUNT or s_ in ("shein",), sites.index(s_)))   # login / puzzle sites last: the free ones answer first
         self.essential_sites = tuple(sites)
         results = []
         notes = {}
         depth = self.depth()
-        self.log("deals_start", items=len(items), sites=sites, depth=depth)
+        if max_total is not None:
+            self.max_total = bool(max_total)
+        self.log("deals_start", items=len(items), sites=sites, depth=depth, max_total=self.max_total)
         with self.T._session() as b:
             for i, it in enumerate(items):
                 if self._stopped():
@@ -416,18 +456,22 @@ class DealHunter:
                         break
                     cards, note = self.search_site(b, s, it, depth=depth)
                     if note:
-                        notes[s] = note
+                        note = re.sub(r"^(?:" + re.escape(s) + r":\s*)+", "", note)      # never "temu: temu: …"
+                        notes[s] = f"{s}: {note}"
                         self.log("deal_site_note", site=s, item=it["name"], note=note[:100])
                     for c in cards:
                         if not matches(c, it["name"]):
                             continue
                         it["_seen"] += 1
-                        pr = c.get("total") or c.get("price") or 0
+                        pr = landed(c) if self.max_total else (c.get("total") or c.get("price") or 0)
+                        c["_landed"] = landed(c)
                         if pr and (it["_min"] is None or pr < it["_min"]):
                             it["_min"] = pr
                         if it.get("max") and pr > it["max"]:
                             if rank_key(c, it["name"], None)[0] == 0 and not price_is_placeholder(pr):
                                 it.setdefault("_over_cap", []).append(pr)                 # real ones over the cap: the owner wants to know where they start
+                                if len(it.setdefault("_over_cards", [])) < 12:
+                                    it["_over_cards"].append(c)
                             continue
                         if s == "facebook marketplace" and not city_ok(c, city):
                             continue
@@ -437,6 +481,9 @@ class DealHunter:
                 clean = [c for c in found if rank_key(c, it["name"], ref)[0] == 0]
                 near = [c for c in found if rank_key(c, it["name"], ref)[0] in (1, 2)][:3]   # a variant / accessory / game: shown apart, never as 'best'
                 best = clean[:per_item]
+                if not clean and it.get("_over_cards"):                                    # nothing under the cap: the nearest real ones above it, so the owner can decide
+                    it["_over_cards"].sort(key=lambda c: c.get("_landed") or c.get("total") or c.get("price") or 1e9)
+                    it["_nearest"] = it["_over_cards"][:3]
                 it["_near"] = bool(near) and not clean
                 over = sorted(it.get("_over_cap") or [])
                 if over:                                                                 # "starts around": the cheapest real one, but not a lone outlier — the second-cheapest when there are several
@@ -464,7 +511,7 @@ class DealHunter:
                             c["image"] = SellerCheck._fetch_image(None, b, c["image_url"], max_bytes=120000)
                         except Exception:
                             pass
-                results.append({"item": it, "best": best, "near": near, "n_found": len(found), "n_clean": len(clean), "ref": ref})
+                results.append({"item": it, "best": best, "near": near, "nearest_over": it.get("_nearest") or [], "n_found": len(found), "n_clean": len(clean), "ref": ref})
                 if self.pace:
                     try:
                         r = self.pace.tick()
@@ -495,19 +542,19 @@ class DealHunter:
     def _line(c):
         price = c.get("total") or c.get("price")
         sym = {"USD": "$", "GBP": "£"}.get(c.get("currency") or "EUR", "€")
-        bits = [f"{sym} {price:,.2f}".replace(",", " ") if isinstance(price, (int, float)) else "price n/a", c.get("condition") or "", c.get("location") or "",
+        ship_note = f" (+ € {c['_ship']:.2f} shipping ≈ € {c['_landed']:.2f} all-in)" if c.get("_landed") and c.get("_ship") else ""
+        bits = [(f"{sym} {price:,.2f}".replace(",", " ") + ship_note) if isinstance(price, (int, float)) else "price n/a", c.get("condition") or "", c.get("location") or "",
                 (f"seller {c['seller']}" if c.get("seller") else ""), c.get("shipping") or ""]
         fb = (c.get("facts") or {}).get("Feedback")
         if fb:
             bits.append(fb)
         return f"{c['title'][:60]} — " + " · ".join(x for x in bits if x) + f" ({c['site']})"
 
-    @staticmethod
-    def nothing_line(it, sites, notes, long=False):
+    def nothing_line(self, it, sites, notes, long=False):
         """Why an item came back empty, in words the owner can act on — never a bare 'nothing found'."""
         answered = [s for s in sites if s not in notes]
         blocked = [s for s in sites if s in notes]
-        cap = f" under € {it['max']}" if it.get("max") else ""
+        cap = f" under € {it['max']:g}" if it.get("max") else ""
         seen = it.get("_seen", 0)
         if it.get("_near"):
             why = f"only look-alikes on {', '.join(answered)} — games, accessories or a different model (listed below as “close, but not it”)" + (f"; real ones start around € {it['_min_clean']:.0f}" if it.get("_min_clean") else "")
@@ -515,7 +562,7 @@ class DealHunter:
         if not answered:
             why = "none of the sites answered (" + "; ".join(f"{s}: {notes[s].split(': ', 1)[-1][:60]}" for s in blocked) + ")"
         elif seen and it.get("max"):
-            why = f"{seen} listing(s) matched but all cost more than € {it['max']} on {', '.join(answered)}" + (f"; real ones start around € {it['_min_clean']:.0f}" if it.get("_min_clean") else "")
+            why = f"{seen} listing(s) matched but all cost more than € {it['max']:g}{' all-in' if getattr(self, 'max_total', False) else ''} on {', '.join(answered)}" + (f"; real ones start around € {it['_min_clean']:.0f}" if it.get("_min_clean") else "")
         elif seen:
             why = f"{seen} listing(s) had the words but none looked like the real item (accessories, games or parts) on {', '.join(answered)}"
         else:
@@ -523,7 +570,7 @@ class DealHunter:
         tip = ""
         if long:
             if it.get("max") and seen:
-                tip = f" Try a higher limit, or say “watch it” and I tell you when one appears{cap}."
+                tip = f" Try a higher limit (the cheapest real one was about € {it['_min_clean']:.0f}{' all-in' if getattr(self, 'max_total', False) else ''}), or say “watch it” and I tell you when one appears{cap}." if it.get("_min_clean") else f" Try a higher limit, or say “watch it” and I tell you when one appears{cap}."
             elif len(item_words(it["name"])) >= 3:
                 tip = " Try fewer words (the model name only), or a synonym — private sellers write titles their own way."
             else:
@@ -535,14 +582,18 @@ class DealHunter:
         for r in results:
             it = r["item"]
             if not r["best"]:
-                out.append(f"• {it['name']}: " + self.nothing_line(it, sites, notes))
+                line = f"• {it['name']}: " + self.nothing_line(it, sites, notes)
+                if r.get("nearest_over"):
+                    n0 = r["nearest_over"][0]
+                    line += f"\n   ↳ closest above your limit: {self._line(n0)}\n   {n0.get('url', '')}"
+                out.append(line)
                 continue
             b0 = r["best"][0]
             tag = ""
             if rank_key(b0, it["name"], r["ref"])[0]:
                 tag = " (⚠ not a clean match — see the document)"
             out.append(f"• {it['name']}: best {self._line(b0)}{tag}" + (f" — {r['n_found']} matching listings seen" if r["n_found"] > 1 else ""))
-        skipped = [f"{s}: {n}" for s, n in notes.items()]
+        skipped = [n if n.startswith(s + ":") else f"{s}: {n}" for s, n in notes.items()]
         head = f"Deals for {len(results)} item(s) in {int(secs // 60)} min {int(secs % 60)} s."
         return head + "\n" + "\n".join(out) + ("\n\nNot searched properly: " + "; ".join(skipped) if skipped else "")
 
@@ -567,6 +618,12 @@ class DealHunter:
             it = r["item"]
             d.section(it["name"] + (f" (max € {it['max']})" if it.get("max") else ""),
                       f"{r['n_found']} matching listing(s) seen; typical used price around € {r['ref']:.0f}." if r["ref"] else self.nothing_line(it, sites, notes, long=True))
+            if not r["best"] and r.get("nearest_over"):
+                d.section("Closest above your limit", f"Nothing real under € {it['max']:g}{' all-in' if self.max_total else ''}; these are the cheapest real ones I saw — say the word and I raise the limit.")
+                for c in r["nearest_over"]:
+                    p = c.get("total") or c.get("price")
+                    d.option(c["title"][:80], c.get("url", ""), price=(f"€ {p:.2f}" + (f" (≈ € {c['_landed']:.2f} all-in)" if c.get("_landed") and self.max_total else "")) if isinstance(p, (int, float)) else "",
+                             image=c.get("image"), facts={"Where": c.get("location", ""), "Condition": c.get("condition", ""), "Site": c["site"]}, grade="ok", verdict="Over your limit, but the real thing.")
             cards = [(c, False) for c in r["best"]] + [(c, True) for c in (r.get("near") or [])]
             near_header_done = False
             for c, is_near in cards:
@@ -586,7 +643,7 @@ class DealHunter:
                                                      "Looks like an accessory, a part, a bundle piece or a broken unit — check the photos before you pay.")
                 d.option(c["title"][:80], c.get("url", ""), price=facts["Price"], image=c.get("image"), facts=facts, grade=grade, verdict=verdict)
         if notes:
-            d.bullets("Sites I could not search properly", [f"{s}: {n}" for s, n in notes.items()])
+            d.bullets("Sites I could not search properly", [n if n.startswith(s + ":") else f"{s}: {n}" for s, n in notes.items()])
         d.section("How I ranked", "Cheapest total first (price + buyer protection where the site shows it). Listings whose title says accessory, game, case, "
                   "broken or 'for parts', and listings far below the typical price, go after the real thing. Nothing was bought or messaged.")
         return d.save()
@@ -622,7 +679,7 @@ class Watcher:
         try:
             WATCH_FILE.parent.mkdir(parents=True, exist_ok=True)
             best = {k: {kk: vv for kk, vv in v.items() if kk not in ("image", "facts")} for k, v in self.best.items()}
-            items = [{k: v for k, v in it.items() if not k.startswith("_")} for it in self.items]
+            items = [{k: v for k, v in it.items() if not k.startswith("_")} for it in self.items]   # scratch keys (_over_cards hold browser cards) never reach disk
             WATCH_FILE.write_text(json.dumps({"items": items, "sites": self.sites, "best": best, "seen": sorted(self.seen)[-2000:],
                                               "until": self.until, "started": self.started, "rounds": self.rounds, "found": self.found}, ensure_ascii=False), encoding="utf-8")
         except Exception:
@@ -756,6 +813,86 @@ def _price_of(raw):
         return float(v)
     except ValueError:
         return None
+
+
+def _walk_lists(obj, depth=0):
+    """Every list of dicts inside a JSON blob (search results live in one of them)."""
+    if depth > 6:
+        return
+    if isinstance(obj, list):
+        if obj and all(isinstance(x, dict) for x in obj[:5]):
+            yield obj
+        for x in obj[:50]:
+            yield from _walk_lists(x, depth + 1)
+    elif isinstance(obj, dict):
+        for v in obj.values():
+            yield from _walk_lists(v, depth + 1)
+
+
+_TITLE_KEYS = ("title", "name", "goods_name", "goodsName", "subject", "product_name", "productName", "item_name")
+_PRICE_KEYS = ("price", "salePrice", "sale_price", "amount", "retailPrice", "final_price", "price_amount", "unit_price")
+_URL_KEYS = ("url", "web_slug", "slug", "link", "goods_url", "href", "detail_url", "item_url")
+_IMG_KEYS = ("image", "img", "images", "goods_img", "main_image", "thumbnail", "thumb", "pic", "picture")
+
+
+def _num(v):
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, dict):
+        for k in ("amount", "value", "cash_amount", "salePrice", "price", "usdAmount", "min", "amountWithSymbol"):
+            if k in v:
+                return _num(v[k])
+        return None
+    if isinstance(v, str):
+        m = re.search(r"(\d{1,6}(?:[.,]\d{1,2})?)", v.replace("\u20ac", ""))
+        return float(m.group(1).replace(",", ".")) if m else None
+    return None
+
+
+def _str(v):
+    if isinstance(v, str):
+        return v
+    if isinstance(v, dict):
+        for k in ("url", "src", "original", "large", "medium", "small", "urls_by_size", "W640", "W320", "en", "it"):
+            if k in v and isinstance(v[k], (str, dict)):
+                return _str(v[k])
+    if isinstance(v, list) and v:
+        return _str(v[0])
+    return ""
+
+
+SITE_ITEM_URL = {"wallapop": "https://it.wallapop.com/item/{slug}", "temu": "https://www.temu.com/it/{slug}", "shein": "https://it.shein.com/{slug}"}
+
+
+def json_cards(b, site, limit=8):
+    """Cards from the JSON the page fetched for itself: the largest list of dicts that has a title and a price per element.
+    Works for Wallapop (api/v3 search), Shein (goods_list), Temu (goodsList) and most shop SPAs; nothing site-specific
+    beyond the item-url pattern."""
+    best = []
+    for url, data in b.xhr_json(r"search|catalog|goods|items|products|list|query", min_bytes=120):
+        for lst in _walk_lists(data):
+            cards = []
+            for it in lst[:60]:
+                title = next((it[k] for k in _TITLE_KEYS if isinstance(it.get(k), str) and len(it[k]) > 3), None)
+                price = next((_num(it[k]) for k in _PRICE_KEYS if k in it and _num(it[k]) is not None), None)
+                if not title or price is None or price <= 0:
+                    continue
+                link = next((_str(it[k]) for k in _URL_KEYS if it.get(k)), "")
+                gid = it.get("id") or it.get("goods_id") or it.get("goodsId") or it.get("item_id")
+                if link and not link.startswith("http"):
+                    link = SITE_ITEM_URL.get(site, "https://{host}/{slug}").format(slug=link.lstrip("/"), host=urllib.parse.urlparse(b.page.url).netloc)
+                if not link and gid:
+                    link = SITE_ITEM_URL.get(site, "").format(slug=str(gid)) or f"{b.page.url.split('?')[0]}#{gid}"
+                img = next((_str(it[k]) for k in _IMG_KEYS if it.get(k)), "")
+                loc = it.get("location") or {}
+                cards.append({"title": str(title)[:120], "price": price, "url": link or b.page.url, "site": site, "image_url": img if img.startswith("http") else "",
+                              "condition": "", "location": (loc.get("city") if isinstance(loc, dict) else str(loc or ""))[:60], "seller": "", "shipping": "",
+                              "currency": "EUR" if not re.search(r"usd|\$", str(it.get("currency") or it.get("price", {}) if isinstance(it.get("price"), dict) else ""), re.I) else "USD"})
+            if len(cards) > len(best):
+                best = cards
+        if len(best) >= 3:
+            break
+    return best[:limit]
 
 
 def generic_cards(b, site, limit=8):

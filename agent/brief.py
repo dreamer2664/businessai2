@@ -201,6 +201,26 @@ def list_coming(text):
     return bool(LIST_COMING.search(text))
 
 
+# words around an item name that are the owner talking, not the product: "the cheapest FM radio you can find", "a good used kindle"
+_ITEM_TAIL = re.compile(r"\s+(?:you can (?:find|get|see|buy)|that you can (?:find|get)|you (?:can )?find|available|in stock|possible|out there|around|on the market|"
+                        r"più economic[oa](?: che (?:riesci a |puoi )?trovare| che trovi| possibile)?|meno car[oa](?: che trovi)?|migliore(?: che trovi)?|"
+                        r"che (?:riesci a |puoi )?trovare|che trovi|disponibil[ei]|in giro|sul mercato|in circolazione)\b.*$", re.I)
+_ITEM_HEAD = re.compile(r"^(?:(?:the|a|an|some|any|un|una|uno|il|la|lo|dei|delle|degli)\s+)?(?:(?:cheapest|best|good|great|nice|decent|reliable|top|lowest[- ]priced|most affordable|"
+                        r"più economic[oa]|migliore?|buon[oa]?|ottim[oa]|economic[oa])\s+)*(?:(?:used|second[- ]hand|new|pre-?owned|usat[oa]|nuov[oa])\s+)?", re.I)
+_ITEM_NOISE = re.compile(r"\b(?:the |some |a few )?(?:best |good |great )?(?:deals?|bargains?|prices?|offers?|options?|occasion[ei]|affar[ei]|prezz[oi])\b|"
+                         r"\b(?:cheapest|best price|lowest price|the cheapest|for|on|per|su|cheap|economic[oa])\b", re.I)
+
+
+def clean_item_name(name):
+    """'the cheapest FM radio you can find' → 'fm radio'; 'a good used kindle' → 'kindle' (used/new are kept as a soft hint elsewhere)."""
+    n = (name or "").strip().lower()
+    n = _ITEM_TAIL.sub("", n)
+    n = _ITEM_NOISE.sub(" ", n)
+    n = _ITEM_HEAD.sub("", n.strip())
+    n = re.sub(r"\s{2,}", " ", n).strip(" .,-—?!")
+    return n
+
+
 def _rule_brief(text, pace):
     """No thinking model: a sensible brief from patterns."""
     low = text.lower()
@@ -312,13 +332,20 @@ def _rule_brief(text, pace):
         "chat": [],
     }[kind]
     out = {"goal": goal, "deliverable": deliverable, "kind": kind, "steps": steps, "questions": [], "counterfeit": counterfeit, "topic": product or goal, "constraints": conditions[:4], "sites": sites[:5]}
-    deal_words = re.search(r"\b(best deals?|cheapest|best price|lowest price|good deals?|bargains?|occasion[ei]|affar[ei]|prezzo più basso|meno car[oi])\b", low)
-    if deal_words and sites and kind in ("research", "seller_check", "ask") and not list_coming(text) and product and len(product.split()) <= 12:
-        names = [x.strip() for x in re.split(r"\s*(?:,|;|\band\b|\be\b|/)\s*", re.sub(r"\b(the |some |a few )?(best |good |great )?(deals?|bargains?|prices?|offers?|occasion[ei]|affar[ei])\b|\b(cheapest|best price|lowest price|for|on|per|su)\b", " ", product, flags=re.I)) if x.strip()]
-        names = [re.sub(r"\s{2,}", " ", n).strip(" .-") for n in names]
+    deal_words = re.search(r"\b(best deals?|cheapest|best price|lowest price|good deals?|bargains?|occasion[ei]|affar[ei]|prezzo più basso|meno car[oi]|più economic[oa]|"
+                           r"look (up|for)|find( me)?|search( for)?|cerca(mi)?|trova(mi)?|used|usat[oa]|second[- ]hand)\b", low)
+    if deal_words and sites and kind in ("research", "seller_check", "ask") and not list_coming(text) and product and len(product.split()) <= 12 \
+            and not re.search(r"\b(sellers?|shops?|stores?|suppliers?|venditor[ei]|negoz[io]|fornitor[ei]|legit|reliable|trustworthy|affidabil[ei]|reviews?|alibaba|1688|wholesale|all'ingrosso)\b", low):
+        names = [x.strip() for x in re.split(r"\s*(?:,|;|\band\b|\be\b|/)\s*", clean_item_name(product)) if x.strip()]
+        names = [clean_item_name(n) for n in names]
         names = [n for n in names if 2 <= len(n) <= 60 and not re.fullmatch(r"(a|an|the|some|used|new|cheap|good|me)", n)]
         if names:
-            out["items"] = [{"name": n, "max": None} for n in names[:10]]
+            mcap = re.search(r"\b(?:max|under|below|less than|massimo|sotto|entro)\s*(?:€|eur)?\s*(\d+(?:[.,]\d{1,2})?)\s*(?:€|eur|euro)?", low)
+            cap = float(mcap.group(1).replace(",", ".")) if mcap else None
+            out["items"] = [{"name": n, "max": cap} for n in names[:10]]
+            if cap:
+                out["constraints"] = [c for c in out["constraints"] if not c.startswith("max")] + [f"max € {cap:g}"]
+            out["max_total"] = bool(re.search(r"incl\w*\s+(shipping|spedizione)|spedizione (inclusa|compresa)|shipping included|with shipping|all[- ]in", low))
             out["kind"] = "research"
             out["deliverable"] = "document"
             out["goal"] = f"Find the best deals for {', '.join(names)} on {', '.join(sites)}"
@@ -425,9 +452,15 @@ class Brief:
         pace = parse_pace(change)
         if pace["pace"] != "normal" or pace["deadline_min"] or pace["budget_min"]:
             b["pace"] = pace
-        m = re.search(r"\b(?:max|under|below|less than|massimo|sotto|entro)\s*(?:€|eur)?\s*(\d+)\s*(?:€|eur|euro)?", low)
+        m = re.search(r"\b(?:max|under|below|less than|massimo|sotto|entro)\s*(?:€|eur)?\s*(\d+(?:[.,]\d{1,2})?)\s*(?:€|eur|euro)?", low) or \
+            re.search(r"(?:€|eur)?\s*(\d+(?:[.,]\d{1,2})?)\s*(?:€|eur|euro)?\s*(?:max|massimo|al massimo|tops|at most)\b", low)
         if m:
-            b["constraints"] = [c for c in b["constraints"] if not c.startswith("max")] + [f"max € {m.group(1)}"]
+            cap = float(m.group(1).replace(",", "."))
+            b["constraints"] = [c for c in b["constraints"] if not c.startswith("max")] + [f"max € {cap:g}" + (" including shipping" if re.search(r"incl\w*\s+(shipping|spedizione)|spedizione (inclusa|compresa)|shipping included|with shipping|all[- ]in|total", low) else "")]
+            if b.get("items"):
+                for it in b["items"]:
+                    it["max"] = cap
+                b["max_total"] = bool(re.search(r"incl\w*\s+(shipping|spedizione)|spedizione (inclusa|compresa)|shipping included|with shipping|all[- ]in|total", low))
         m = re.search(r"\b(?:only|solo|just)\s+([a-z]+(?: [a-z]+)?)\s+(sellers?|shops?|stores?|suppliers?|venditori)\b", low)
         if m:
             b["constraints"].append(f"only {m.group(1)} {m.group(2)}")

@@ -157,7 +157,7 @@ try:
         with _T._session() as b:
             return _D.search_site(b, "fakeshop", {"name": "tripod", "max": None}, limit=5, depth=1)
     _cards, _note = _T.on_hands(_go, timeout=90)
-    check("walled shop: the owner gets the puzzle picture and ONE question (attempt 1 of 5)", len(_asks) == 1 and "attempt 1 of 5" in _asks[0] and "📷" in _notes, (_asks, _notes))
+    check("walled shop: the owner gets the puzzle picture and ONE question (5 taps left today)", len(_asks) == 1 and "5 tap(s) left today" in _asks[0] and "📷" in _notes, (_asks, _notes))
     check("after the owner's tap the page is re-checked, passed, session kept", any("Passed the security check" in n and "session kept" in n for n in _notes) and _A.data["captcha_tries"]["fakeshop"]["passed"] == 1, _notes)
     check("results were read after the puzzle", len(_cards) >= 3, (_cards[:1], _note))
     _T.on_hands(_T.close_browser, timeout=30)
