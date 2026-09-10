@@ -136,7 +136,9 @@ class Browser:
         self.headless = headless
         ua = _markets.pick_ua() if stealth else ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                                                              "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
-        self._ctx = self._browser.new_context(viewport={"width": 1280, "height": 900}, locale="en-US", user_agent=ua)
+        self._ctx = self._browser.new_context(viewport={"width": 1280, "height": 900}, locale=os.environ.get("BAI_LOCALE", "it-IT"),
+                                              timezone_id=os.environ.get("OWNER_TZ", "Europe/Rome"), user_agent=ua,
+                                              extra_http_headers={"Accept-Language": "it-IT,it;q=0.9,en;q=0.7"})   # the owner is in Italy: sites answer in Italian, prices in EUR, fewer "where do you live?" popups
         if stealth:
             self._ctx.add_init_script(_markets.STEALTH_INIT)
             self.log("browser_stealth", ua=ua[:60])

@@ -100,3 +100,12 @@ Reality check on 2026-09-09 with the real browser:
   Shein block the sandbox's address (they may work from your PC — the bot says so per site); Temu and Facebook need a login,
   so they are named as not searchable.
 - "What time is it in the UK" works (and the clock is yours, Europe/Rome, not the machine's).
+
+## 2026-09-10 (while you were out) — what the deal hunter learned
+- It no longer falls for "€ 1" listings (that's "make me an offer"), "Nintendo switch zelda" (a game), or a "Dyson hanger" (an
+  accessory) as the best deal — the best is the cheapest *real* item; the odd ones are still in the document, marked.
+- Longer time = deeper: with "take 5-6 hours" it reads more pages, opens the top 3 listings per item, and then **watches** the
+  marketplaces every 15 minutes, telling you only when a new listing beats the best ("🔔 Better deal for …").
+- It now browses as an Italian visitor (Italian pages, € prices), so fewer popups and no dollar prices.
+- New command **/markets**: one real search on each marketplace and a ✅/❌ list with the honest reason (blocked, CAPTCHA, login).
+  Run it once on your PC — your home connection will get different answers than my sandbox (e.g. Wallapop/eBay may work for you).

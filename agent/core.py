@@ -88,7 +88,7 @@ Forward me any customer message (or write /customer <their text>) → I draft th
 "rehearse posting about <topic>" — a dry run on my own practice network: log in, publish with photo, learn the limits, answer comments (nothing public) · /rehearse map — what I learned about each interface
 "build a website for <a place>" — I write the copy, build the pages, check them in my browser and send you the files · "start auto training on website building" — I practise on random real places from the map (watch it live) · "stop training"
 while I work: "status" / "what are you doing" · "why" · "hurry up" · "stop" · a change ("only Italy") · a new request (queued) — no need to wait
-/lessons — what I learned from my last jobs (I reflect after every one) · /thinking — what is on my mind right now · /disk [clean] — space on my machine · /walls [forget [site]] — sites that blocked me lately (I put them last)
+/lessons — what I learned from my last jobs (I reflect after every one) · /thinking — what is on my mind right now · /disk [clean] — space on my machine · /walls [forget [site]] — sites that blocked me lately (I put them last) · /markets — which marketplaces I can search from this machine right now
 /ideas — business ideas I jotted from short videos (/ideas <topic> = go watch some now) · /study [topic] — find and keep a good PDF in my library
 /accounts — the site accounts I created with my own e-mail (I sign up when a task needs it and tell you in one line; never money sites) · /accounts allow <site>
 /library — the documents I've written (seller checks, research, comparisons); they also land in my Drive folder · /progress — today's log in Google Docs (every job writes there as it goes; long jobs get their own page) · /projects — the ideas I'm working on in free windows ('new project: …' adds one) · /mail — my inbox sorted into Verification / Leads / Alerts / Newsletters ('tidy the inbox' now, 'any leads?')
@@ -1068,6 +1068,21 @@ class Agent:
                 self.tasks.walls.forget(site or None)
                 return f"🧱 Forgot the walls for {site}." if site else "🧱 Forgot all remembered walls — every site gets a fresh chance."
             return self.tasks.walls.text()
+        if low.startswith("/markets") or re.fullmatch(r"\W*(which|what) (marketplaces?|shops?|sites?) can you (search|read|use)( right now| from here| for me)?\??\W*", low):
+            from .deals import probe_sites
+            if self.busy:
+                return f"I'm on: {self.busy} — ask again when it's done, the probe needs the browser."
+            def go():
+                self.busy = "probing the marketplaces"
+                try:
+                    out = self.tasks.on_hands(probe_sites, self.deals, timeout=600)
+                except Exception as e:
+                    out = f"The probe failed: {str(e)[:120]}"
+                finally:
+                    self.busy = None
+                self.bot.send(self.owner_id, out)
+            threading.Thread(target=go, daemon=True).start()
+            return "🛒 Trying one real search on each marketplace (Vinted, Subito, Wallapop, eBay, Banggood, DHgate, Shein, Temu, AliExpress, Amazon, Facebook) — about 2 minutes, the list comes here."
         if low.startswith("/ideas"):
             arg = text[6:].strip()
             if arg:
@@ -1440,7 +1455,7 @@ class Agent:
         if self.planner.installed() and len(low.split()) >= 8 and self.owner_id and not self.busy:
             self.bot.send(self.owner_id, "👀 On it — reading your request…")   # a sign of life within a second; the plan follows
         b = self.briefer.make(text)
-        if it and it["kind"] in ("watch", "summarize", "visit") and b["kind"] in ("ask", "research", "visit", "watch", "summarize") and b["kind"] != "trending":
+        if it and it["kind"] in ("watch", "summarize", "visit") and b["kind"] in ("ask", "research", "visit", "watch", "summarize") and b["kind"] != "trending" and not (b.get("items") or b.get("needs_list")):
             b["kind"], b["topic"] = it["kind"], it["topic"]                                        # URL rules are reliable
         self.log("intent", intent=b["kind"], topic=b["topic"][:80])
         if b.get("pace_only"):                                                       # "slow down!!" with nothing running: remembered for the next job
@@ -1809,6 +1824,7 @@ class Agent:
                     city = m.group(1).strip().title()
             sites = list(b.get("sites") or ())
             path, summary, results = self.tasks.on_hands(self.deals.run, b["items"], sites, city, 4, True, timeout=3000)
+            self._last_deals = results
             link = ""
             if path and self.google.connected():
                 link = self.hand_over_doc(path, None, folder="Research")
@@ -2444,8 +2460,17 @@ class Agent:
         paras, urls = [], []
         last_report = time.time()
         why_end = "the time you asked for is used"
+        deals_job = bool(b.get("items"))
+        watch = None
         try:
-            self.bot.send(self.owner_id, f"⏬ First pass delivered. You asked for at least {_span(self.pace.floor_min)}, so I keep going: deeper angles on "
+            if deals_job:                                                  # a shopping list: the time goes into watching the marketplaces, not articles
+                watch = self.deals.watcher(b["items"], list(b.get("sites") or ()), getattr(self, "_last_deals", None))
+                self.bot.send(self.owner_id, f"⏬ First pass delivered. You asked for at least {_span(self.pace.floor_min)}, so I keep watching "
+                                             f"{', '.join(watch.sites)} for your {len(b['items'])} item(s): every {self.deals.WATCH_EVERY // 60} min I re-check newest and cheapest "
+                                             f"listings and tell you only when something beats the current best. Say 'that's enough' to close earlier.")
+                self.progress.step(f"floor: first pass delivered, {f0 // 60} min still to use — watching the marketplaces for better deals")
+            else:
+                self.bot.send(self.owner_id, f"⏬ First pass delivered. You asked for at least {_span(self.pace.floor_min)}, so I keep going: deeper angles on "
                                          f"“{topic[:60]}”, then steps on our projects. Say 'that's enough' to close earlier.")
             self.progress.step(f"floor: first pass delivered, {f0 // 60} min still to use — deeper angles, then projects")
             while self.pace.floor_left() > 0 and not self.stop_flag:
@@ -2457,6 +2482,22 @@ class Agent:
                     break
                 t1 = time.time()
                 line = ""
+                if deals_job and watch is not None:
+                    try:
+                        better, line = self.tasks.on_hands(watch.round, timeout=900)
+                    except Exception as e:
+                        better, line = [], f"watch round failed: {str(e)[:80]}"
+                    done_angles.append(line)
+                    for msg in better:                                     # a new listing that beats the best → the owner hears it now
+                        self.bot.send(self.owner_id, msg)
+                    project_lines += better
+                    rest = self.deals.WATCH_EVERY - (time.time() - t1)
+                    if line:
+                        self.progress.step(line)
+                        self.log("floor_item", text=line[:120])
+                    while rest > 0 and self.pace.floor_left() > 0 and not self.stop_flag and not self.mind.queue:
+                        time.sleep(min(5, rest)); rest -= 5
+                    continue
                 if angles:
                     a = angles.pop(0)
                     try:
@@ -2512,7 +2553,11 @@ class Agent:
                     self._last_doc_link = link
             except Exception as e:
                 self.log("floor_doc_failed", error=str(e)[:100])
-        summary = (f"⏬ Floor closed — {why_end}. {used // 3600} h {used % 3600 // 60} min used: {len(done_angles)} deeper angle(s) on “{topic[:50]}”, "
+        if deals_job:
+            summary = (f"⏬ Watch closed — {why_end}. {used // 3600} h {used % 3600 // 60} min used: {len(done_angles)} re-check round(s) on the marketplaces, "
+                       f"{len(project_lines)} better deal(s) found" + ("." if not project_lines else ":\n" + "\n".join("• " + x[:200] for x in project_lines[-5:])))
+        else:
+            summary = (f"⏬ Floor closed — {why_end}. {used // 3600} h {used % 3600 // 60} min used: {len(done_angles)} deeper angle(s) on “{topic[:50]}”, "
                    f"{len(project_lines)} project step(s)" + (f", {len(study_lines)} study session(s)" if study_lines else "") + "."
                    + (f"\n📄 Deeper notes: {link}" if link else "") + ("\n" + "\n".join("• " + x[:140] for x in project_lines[-3:]) if project_lines else ""))
         self.pace.floor_done()

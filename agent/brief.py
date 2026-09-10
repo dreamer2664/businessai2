@@ -130,7 +130,7 @@ def parse_pace(text):
     mr = re.search(r"\b(?:take|spend|use|around|about|roughly|circa|prenditi|for|in)\s+(?:around |about |roughly |circa |some )?" + _RANGE + r"\b", low)
     if mr:                                                              # "take around 5-6 hours": the low end is the floor, the high end the budget
         lo, hi = _minutes(mr.group(1), mr.group(3)), _minutes(mr.group(2), mr.group(3))
-        if lo and hi and hi >= lo and lo >= 5:
+        if lo and hi and hi >= lo and lo >= 2:
             out.update(pace="slow", floor_min=lo, budget_min=hi, why=f"you said {_span(lo)} to {_span(hi)} — I use at least {_span(lo)} and stop by {_span(hi)}")
     m = re.search(_FLOOR, low)
     if m and not out["floor_min"]:
@@ -354,6 +354,11 @@ class Brief:
             return {"goal": text.strip(), "deliverable": "answer", "kind": "chat", "steps": [], "questions": [], "counterfeit": False,
                     "topic": "", "constraints": [], "sites": [], "pace": pace, "pace_only": True, "t": time.time()}
         b = _rule_brief(text, pace)
+        if b.get("items") or b.get("needs_list"):                                  # a shopping list: the rules know exactly what to do; the small model only muddles it
+            b["pace"] = pace
+            b["t"] = time.time()
+            self.log("brief", task=b["kind"], deliverable=b["deliverable"], pace=pace["pace"], deadline=pace["deadline_min"], budget=pace["budget_min"], steps=len(b["steps"]), items=len(b.get("items") or []))
+            return b
         if self.planner is not None and self.planner.installed() and b["kind"] not in ("chat",) and len(text.split()) >= 3:
             try:
                 raw = self.planner.chat("You plan work for a business assistant. Output JSON only.", PACE_PROMPT + json.dumps(text), max_tokens=320, timeout=120)

@@ -31,8 +31,14 @@ def vinted_search_url(query, order="newest_first"):
     return "https://www.vinted.it/catalog?search_text=" + urllib.parse.quote_plus(query) + f"&order={order}"
 
 
-def subito_search_url(query):
-    return "https://www.subito.it/annunci-italia/vendita/usato/?q=" + urllib.parse.quote_plus(query)
+def subito_search_url(query, order=None, page=1):
+    """order: 'priceasc' | 'datedesc' (default) ; page: 1-based (subito's 'o' parameter)."""
+    u = "https://www.subito.it/annunci-italia/vendita/usato/?q=" + urllib.parse.quote_plus(query)
+    if order:
+        u += f"&order={order}"
+    if page and int(page) > 1:
+        u += f"&o={int(page)}"
+    return u
 
 
 # ---- JSON blob plumbing ------------------------------------------------------------
@@ -766,15 +772,22 @@ SEARCH = {"vinted": (vinted_search_url, parse_vinted_search), "subito": (subito_
 ITEM = {"vinted": parse_vinted_item, "subito": parse_subito_item}
 
 
-def search_market(b, site, query, limit=8, throttle=None, price_to=None):
+def search_market(b, site, query, limit=8, throttle=None, price_to=None, order=None, page=1):
     """Open the marketplace's own search and parse its cards. Returns (cards, note).
+    order: None (the site's default) | "price" (cheapest first) | "newest"; page: 1-based.
 
     Never raises for site behaviour (walls, empties → ([], note)); BrowserError
     only for transport failures the caller should know about."""
     if site not in SEARCH:
         raise ValueError(f"unknown marketplace: {site}")
     th = throttle or THROTTLE
-    url, parse = SEARCH[site][0](query), SEARCH[site][1]
+    parse = SEARCH[site][1]
+    if site == "subito":
+        url = subito_search_url(query, {"price": "priceasc", "newest": "datedesc"}.get(order), page)
+    else:
+        url = vinted_search_url(query, {"price": "price_low_to_high", "newest": "newest_first"}.get(order, "newest_first"))
+        if page and int(page) > 1:
+            url += f"&page={int(page)}"
     if price_to and site == "vinted":
         url += f"&price_to={float(price_to):g}&currency=EUR"
     th.wait(url)
@@ -792,7 +805,7 @@ def search_market(b, site, query, limit=8, throttle=None, price_to=None):
         keep_going = th.punish(host)
         return [], f"{site}: {st} wall — backed off" + ("" if keep_going else "; leaving it alone for now")
     if site == "vinted":                                              # the page's own JSON is richer (seller, total, condition)
-        cards = vinted_search_api(b, query, limit, price_to=price_to, throttle=th)
+        cards = vinted_search_api(b, query, limit, price_to=price_to, throttle=th, order={"price": "price_low_to_high", "newest": "newest_first"}.get(order, "relevance"), page=page)
         if cards:
             return cards, ""
     try:
@@ -856,9 +869,10 @@ def vinted_api(b, path, params=None, throttle=None):
         return None
 
 
-def vinted_search_api(b, query, limit=8, price_to=None, order="relevance", throttle=None):
-    """Catalog search via the page's own JSON: richer cards (seller, total, condition, size). [] when unavailable."""
-    params = {"search_text": query, "order": order, "per_page": min(max(limit, 1), 40), "page": 1, "currency": "EUR"}
+def vinted_search_api(b, query, limit=8, price_to=None, order="relevance", throttle=None, page=1):
+    """Catalog search via the page's own JSON: richer cards (seller, total, condition, size). [] when unavailable.
+    order: relevance | price_low_to_high | newest_first; page: 1-based."""
+    params = {"search_text": query, "order": order, "per_page": min(max(limit, 1), 40), "page": max(1, int(page)), "currency": "EUR"}
     if price_to:
         params["price_to"] = f"{float(price_to):g}"
     data = vinted_api(b, "/catalog/items", params, throttle)

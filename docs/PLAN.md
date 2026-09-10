@@ -334,3 +334,28 @@ VERSION 2.0 (2026-09-08): the shop grows extras and a designer — discount code
 - talk.py: "the UK / united kingdom / …" clocks; owner's timezone (OWNER_TZ, default Europe/Rome) not the machine's.
 - tasks.py: `summarize` without a URL answers in words; machine faults add the doctor line.
 - New suite engine/scripts/score_session.py (38 checks, every row of the diagnosis). Full battery re-run, no drops.
+
+## 2026-09-10 (owner away) — deal hunter trained further: depth, watching, more sites, Italian browser — done
+- Full-agent live run of the list flow (real Agent, fake bot): request → plan waits → list → 3 items on Subito+Vinted in 2 min 31 s,
+  document delivered. Two things it showed: the small model's plan overrode the list brief (fixed: list briefs skip the model), and
+  "€ 1 Nintendo Switch" / "Dyson v8 hanger € 11" won as "best" — fixed with `typical_price()` (median of clean matches only),
+  `price_is_placeholder()` (1/10/99/123/999… = "make me an offer"), a GAME_WORDS penalty ("Nintendo switch zelda" is a game),
+  a bare-title-far-below-typical penalty, and more accessory words (hanger, filter, nozzle, screen…).
+- Depth follows the pace (`DealHunter.depth()`): quick = one page per site; normal = cheapest-first + relevance; slow / a floor =
+  + a second page and the top 3 listings opened per item. `markets.search_market()` learned `order` (price | newest) and `page`
+  for both Vinted (API params) and Subito (`order=priceasc`, `o=N`).
+- The time floor on a shopping list is a **watch**, not article reading: `deals.Watcher` re-checks newest + cheapest every 15 min,
+  remembers what it saw and sends a 🔔 only when a new listing beats the current best (same match/cap/penalty rules); the close
+  message counts rounds and better deals. `run_floor` branches on `b["items"]`.
+- Browser is now an Italian visitor: `locale=it-IT`, `timezone Europe/Rome`, `Accept-Language it-IT` → Vinted lang it-IT, € prices,
+  fewer "where do you live?" popups; Banggood/DHgate/AliExpress get a currency=EUR cookie before the first search (`SITE_COOKIES`).
+- Per-site honesty: a redirect to /risk/challenge = "security check (CAPTCHA) — I don't try to pass those"; a redirect to /login =
+  "sends visitors to a login page"; Amazon's "Ci dispiace" error page = "blocks this machine"; Cloudflare's "Just a moment" gets one
+  9-second wait before it counts as a wall (DHgate then reads fine).
+- `/markets` (or "which marketplaces can you search right now?") — one real search per site, ✅/❌ with the reason, ~1 min. From the
+  sandbox: ✅ vinted, subito, banggood, dhgate, aliexpress · ❌ wallapop (403), ebay (error page), shein (CAPTCHA), temu (login),
+  amazon (error page), facebook (login). The PC's home address will differ — the owner can run it there.
+- Document: "Used vs new" note when both kinds of site were searched; each listing says "second-hand, private seller" or "new,
+  from a shop (shipped from China, 1–4 weeks)"; $/£ shown when a shop prices in them.
+- New suite engine/scripts/score_deals.py: 35 checks (matching, ranking, placeholders, list flow, summary/document, depth,
+  watcher rounds, + a live Vinted/Subito run). Pace range floor accepts minutes ≥ 2 ("take around 4-5 minutes").
