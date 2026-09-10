@@ -447,16 +447,32 @@ class Mind:
         rec = {"t": time.strftime("%Y-%m-%dT%H:%M"), "goal": j["goal"][:120], "kind": j["kind"], "seconds": el, "delivered": bool(delivered),
                "late": late, "snags": j["snags"][-4:], "outcome": (outcome or "")[:200], "lesson": lesson,
                "cycle": [{"n": c["n"] + 1, "step": c["step"][:80], "secs": c["secs"], "verdict": c["verdict"], "critique": c["critique"][:160]} for c in j.get("cycle", [])],
-               # is this lesson advice for the next plan? only when something was actually wrong (a clean run is a record, not a warning)
-               "improve": bool(not delivered or late or j.get("hurry") or len(j["snags"]) >= 3 or any(c["verdict"] in ("thin", "redo") for c in j.get("cycle", [])))}
+               # is this lesson advice for the next plan? only when something was actually wrong with the PLAN (a clean run is a record,
+               # not a warning; a broken machine — browser missing, no memory — is a repair for the owner, not a lesson for the planner)
+               "improve": bool((not delivered and not self.machine_fault(outcome or note)) or late or j.get("hurry") or len(j["snags"]) >= 3
+                               or any(c["verdict"] in ("thin", "redo") for c in j.get("cycle", []))),
+               "machine": bool(not delivered and self.machine_fault(outcome or note))}
         _append(LESSONS, rec)
         self.log("mind_reflect", job=j["kind"], seconds=el, delivered=delivered, late=late, lesson=lesson[:100])
         self.job = None
         return rec
 
+    MACHINE_FAULT = re.compile(r"(BrowserType\.launch|Executable doesn't exist|No module named|ModuleNotFoundError|playwright install|"
+                               r"cannot allocate memory|MemoryError|No space left|Errno 28|Target page, context or browser has been closed|"
+                               r"llama-server|connection refused|Failed to establish a new connection|ENOSPC|out of memory)", re.I)
+
+    def machine_fault(self, text):
+        """Was this failure the machine's (browser not installed, module missing, disk/memory), not the job's plan?"""
+        return bool(text and self.MACHINE_FAULT.search(str(text)))
+
     def _lesson(self, j, outcome, delivered, late, note):
         snags = " ".join(j["snags"]).lower()
         if not delivered:
+            if self.machine_fault(outcome or note):
+                what = "the browser is not installed" if re.search(r"BrowserType\.launch|Executable doesn't exist|playwright install", outcome or note, re.I) else \
+                    "a Python module is missing" if re.search(r"No module named|ModuleNotFoundError", outcome or note, re.I) else \
+                    "the machine ran out of memory or disk" if re.search(r"memory|space left|ENOSPC|Errno 28", outcome or note, re.I) else "the machine, not the plan"
+                return f"{j['kind']}: could not even start — {what} (fix on the PC: the doctor line in docs/INSTALL_WINDOWS.md). The plan itself was fine."
             if "captcha" in snags or "captcha" in (outcome or "").lower():
                 return f"{j['kind']}: a CAPTCHA wall stopped me — next time try another site first and keep the walled one last."
             if "timeout" in snags or "timed out" in (outcome or "").lower():
@@ -503,11 +519,24 @@ class Mind:
         return f"done in {el // 60} min — nothing to change."
 
     # ---- what the past says about a new job ------------------------------------------------------------------------
+    ADVICE_DAYS = 14          # a lesson older than this is history, not advice
+
     def advice(self, kind, topic=""):
-        """Lessons from earlier jobs of the same kind (most recent first, max 3) — shown in the plan and given to the planner."""
-        recs = [r for r in _load(LESSONS) if r.get("kind") == kind and r.get("improve", not r["lesson"].endswith("keep the same order of steps."))]
+        """Lessons from earlier jobs of the same kind (most recent first, max 3) — shown in the plan and given to the planner.
+        Only real plan lessons: not machine faults (old records included), not older than ADVICE_DAYS, and nothing from before the
+        last clean run of the same kind — once a job went fine, the earlier warnings have been answered."""
+        recs = [r for r in _load(LESSONS) if r.get("kind") == kind]
+        cut = time.strftime("%Y-%m-%dT%H:%M", time.localtime(time.time() - self.ADVICE_DAYS * 86400))
+        clean = [i for i, r in enumerate(recs) if r.get("delivered") and not r.get("late") and not r.get("improve", False)]
+        recs = recs[clean[-1] + 1:] if clean else recs                 # only what happened after the last clean run (file order = time order)
         seen, out = set(), []
         for r in reversed(recs):
+            if r.get("t", "") < cut:
+                continue
+            if r.get("machine") or self.machine_fault(r.get("outcome", "")) or self.machine_fault(r.get("lesson", "")):
+                continue
+            if not r.get("improve", not r["lesson"].endswith("keep the same order of steps.")):
+                continue
             l = r["lesson"].split(": ", 1)[-1]
             if l not in seen:
                 seen.add(l)
@@ -517,10 +546,25 @@ class Mind:
         return out
 
     def lessons_text(self, limit=8):
-        recs = _load(LESSONS, limit=limit)
+        """/lessons — the last real lessons; a run of identical machine faults (browser missing ×5) is folded into one honest line."""
+        recs = _load(LESSONS)
         if not recs:
             return "No lessons yet — I write one after every job."
-        return "🧠 What I learned from my last jobs:\n" + "\n".join(f"• {r['t'][5:16].replace('T', ' ')} · {r['lesson']}" for r in reversed(recs))
+        out, faults = [], 0
+        for r in reversed(recs):
+            if r.get("machine") or (not r.get("delivered", True) and self.machine_fault(r.get("outcome", "") + " " + r.get("lesson", ""))):
+                faults += 1
+                if faults > 1:
+                    continue
+                line = f"• {r['t'][5:16].replace('T', ' ')} · {r['kind']}: could not start — the machine was broken (browser or module missing), not the plan."
+            else:
+                line = f"• {r['t'][5:16].replace('T', ' ')} · {r['lesson']}"
+            out.append(line)
+            if len(out) >= limit:
+                break
+        if faults > 1:
+            out = [l + (f" ({faults} such runs)" if "could not start" in l else "") for l in out]
+        return "🧠 What I learned from my last jobs:\n" + "\n".join(out)
 
     def think_snapshot(self):
         """Live beliefs for the thinking panel (item 9): why + status + recent lessons + queue."""

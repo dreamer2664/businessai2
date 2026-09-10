@@ -292,3 +292,18 @@ VERSION 2.0 (2026-09-08): the shop grows extras and a designer — discount code
 - Live check: howcork.com product page → JSON-LD gives $ 46,00 · in stock · brand 15:21 · four-year warranty · 10x16 cm · Stockholm, Sweden
   where the regex pass had only "46". Category pages have no product node → {} → regex as before.
 - score_walls_memory 18/18, score_listing 20/20 (offline, in score_all). research/sellers/walls/docs re-run — no drops.
+
+## 2026-09-10 — the stale "BrowserType.launch" lesson (machine faults are repairs, not lessons) — done
+- On 2026-09-09 seven research jobs died at start because Chromium was not installed on the PC. The mind wrote seven "I did not deliver
+  … start with the cheapest reliable source" lessons and kept showing them as "From last time" advice in every new plan — wrong advice
+  about a right plan. Now: `Mind.machine_fault()` recognises machine failures (browser executable missing, module missing, no memory,
+  no disk, model server down); such a run gets an honest lesson ("could not even start — the browser is not installed … the plan
+  itself was fine"), is flagged `machine` and never `improve`, so it is not advice. `advice()` also drops anything older than 14 days
+  and anything from before the last clean run of the same kind (a warning answered by a clean run is history). Old records are
+  filtered too, so the PC's existing lessons file is fixed without touching it. `/lessons` folds a run of identical machine faults
+  into one line ("… (7 such runs)").
+- The job itself now tells the owner what to do: Tasks.machine_fix() appends a 🔧 line with the doctor command (browser / module),
+  `/disk clean` (disk full) or "close other programs" (memory) to the failure text.
+- selfcheck (`python3 -m agent.selfcheck`) now launches Chromium once and reports the walls memory, thinking model and Google state;
+  doctor.sh v6 installs playwright + the headless shell when they are missing and prints the selfcheck in its report.
+- think 21 → 25. mind 42, talk 463, floor 44, stop 11, queue 20, brief 39, progress 16, docs 20, walls 14 unchanged.

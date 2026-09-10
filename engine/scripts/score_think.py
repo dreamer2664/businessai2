@@ -210,6 +210,56 @@ def _():
     assert m.advice("research") == [], m.advice("research")      # a good run is not advice for the next plan
 
 
+@check("machine fault (browser not installed) → a repair note, never advice for the next plan")
+def _():
+    m = fresh()
+    m.begin("research bamboo toothbrush suppliers", "research", ["Read pages"])
+    rec = m.reflect("Task failed: Error: BrowserType.launch: Executable doesn't exist at /home/x/chrome-headless-shell", delivered=False)
+    assert rec["machine"] and not rec["improve"], rec
+    assert "could not even start — the browser is not installed" in rec["lesson"] and "The plan itself was fine" in rec["lesson"], rec["lesson"]
+    assert m.advice("research") == [], m.advice("research")
+    m.begin("research x", "research", ["Read pages"])
+    rec2 = m.reflect("Task failed: ModuleNotFoundError: No module named 'playwright'", delivered=False)
+    assert "a Python module is missing" in rec2["lesson"] and m.advice("research") == []
+
+
+@check("a real failure is still advice; a later clean run of the same kind retires it")
+def _():
+    m = fresh()
+    m.begin("research y", "research", ["Read pages"])
+    m.on_event("task_wall", {"url": "https://www.etsy.com/x", "wall": "captcha"})
+    rec = m.reflect("nothing readable — every page was a CAPTCHA", delivered=False)
+    assert rec["improve"] and m.advice("research") and "CAPTCHA" in m.advice("research")[0], (rec, m.advice("research"))
+    m.begin("research z", "research", ["Read pages"])
+    m.on_event("browser_open", {"url": "https://a.com/1"}); m.on_event("browser_open", {"url": "https://b.com/2"})
+    m.reflect("report sent", delivered=True)
+    assert m.advice("research") == [], m.advice("research")        # the warning was answered by a clean run
+
+
+@check("old lessons (> 14 days) are history, not advice")
+def _():
+    import json as _j
+    m = fresh()
+    m.begin("research old", "research", ["Read pages"])
+    rec = m.reflect("nothing readable — CAPTCHA", delivered=False)
+    assert m.advice("research")
+    from agent import mind as _mind
+    lines = _mind.LESSONS.read_text(encoding="utf-8").splitlines()
+    r = _j.loads(lines[-1]); r["t"] = "2026-01-01T10:00"
+    _mind.LESSONS.write_text("\n".join(lines[:-1] + [_j.dumps(r)]) + "\n", encoding="utf-8")
+    assert m.advice("research") == [], m.advice("research")
+
+
+@check("tasks: a machine fault gets a plain-words repair line (doctor), other errors do not")
+def _():
+    from agent.tasks import Tasks
+    fix = Tasks.machine_fix("Error: BrowserType.launch: Executable doesn't exist at /home/x/chrome")
+    assert fix.startswith("🔧 My browser is not installed") and "doctor.sh" in fix, fix
+    assert "doctor.sh" in Tasks.machine_fix("ModuleNotFoundError: No module named 'playwright'")
+    assert "/disk clean" in Tasks.machine_fix("[Errno 28] No space left on device")
+    assert Tasks.machine_fix("KeyError: 'x'") == ""
+
+
 @check("thinking_text and status_line carry the step-by-step check")
 def _():
     m = _job()

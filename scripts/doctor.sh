@@ -3,7 +3,7 @@
 # Run from Windows PowerShell (one line, works even if the local repo is broken):
 #   wsl bash -lc "curl -sL https://raw.githubusercontent.com/dreamer2664/businessai2/main/scripts/doctor.sh | bash"
 # It NEVER prints secret values — only key names and value lengths.
-DOCTOR_VERSION=5
+DOCTOR_VERSION=6
 set -u
 echo "--- doctor v$DOCTOR_VERSION ---"
 REPO_URL="https://github.com/dreamer2664/businessai2.git"
@@ -63,10 +63,26 @@ for k in TELEGRAM_BOT_TOKEN GITHUB_TOKEN; do
 done
 [ -f .secrets/google_client.json ] && echo "google_client.json: present" || echo "google_client.json: missing (needed later for Drive/Gmail)"
 
-# 3. python sanity
+# 3. python sanity + the browser (seven jobs failed on 2026-09-09 because Chromium was not installed — the doctor now repairs it)
 echo "--- python ---"
 python3 --version 2>&1
 python3 -c "import agent.core; print('agent.core imports OK')" 2>&1 | tail -1
+echo "--- browser ---"
+if ! python3 -c "import playwright" 2>/dev/null; then
+  echo "(playwright module missing - installing)"; pip install -q playwright pillow numpy 2>&1 | tail -1
+fi
+if ! python3 - 2>/dev/null <<'PY'
+from playwright.sync_api import sync_playwright
+with sync_playwright() as pw:
+    pw.chromium.launch(headless=True, args=["--no-sandbox", "--disable-gpu"]).close()
+PY
+then
+  echo "(chromium does not launch - installing the headless shell + system libs, 1-3 min)"
+  python3 -m playwright install chromium-headless-shell 2>&1 | tail -1
+  python3 -m playwright install-deps chromium 2>&1 | tail -1
+fi
+echo "--- selfcheck (keys, brain, browser, walls memory, model, google) ---"
+python3 -m agent.selfcheck 2>&1 | grep -v Warning | tail -9
 
 # 4. (re)start the bot
 echo "--- service ---"

@@ -82,3 +82,6 @@ Reality check on 2026-09-09 with the real browser:
   walls (`/walls`, `/walls forget`), (2) fuller listing card from the shop's own product data (price+currency, stock, returns, shipping,
   brand, warranty…). walls memory 18/18, listing 20/20. **The owner's whole list is now ticked** (A–I, disk, Google, multi-source,
   scraper). PC still needs the pull line + `connect google`.
+- 2026-09-10 (later): the stale "BrowserType.launch" advice is gone — machine faults (browser/module missing, no disk/memory) are
+  repairs for the owner (🔧 line with the doctor command), never planner lessons; old advice retires after 14 days or a clean run.
+  selfcheck + doctor.sh v6 install/verify the browser. think 25/25.

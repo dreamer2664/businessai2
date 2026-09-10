@@ -18,4 +18,40 @@ else:
     print(f"v owner = @{config.TELEGRAM_OWNER_USERNAME or config.TELEGRAM_OWNER_ID}")
 from .brain import Brain
 print(("v" if Brain().ready else "-") + " brain:", Brain().describe())
+
+# the browser — the thing that turned seven jobs into "could not start" on 2026-09-09
+try:
+    import playwright  # noqa: F401
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as pw:
+        b = pw.chromium.launch(headless=True, args=["--no-sandbox", "--disable-gpu"])
+        b.close()
+    print("v browser: chromium launches")
+except ImportError:
+    print("x browser: the playwright module is missing → pip install playwright && python3 -m playwright install chromium-headless-shell"); ok = False
+except Exception as e:
+    msg = str(e).splitlines()[0][:100]
+    print(f"x browser: cannot launch ({msg}) → python3 -m playwright install chromium-headless-shell && python3 -m playwright install-deps chromium"); ok = False
+
+# the new pieces (2026-09-10): wall memory, listing card, sources, thinking model
+try:
+    from . import walls, listing, sources  # noqa: F401
+    from .walls import WallMemory
+    w = WallMemory()
+    n = sum(1 for h in w.hosts if w.recent(h, 24))
+    print(f"v walls memory: {len(w.hosts)} site(s) remembered, {n} walled in the last 24 h")
+except Exception as e:
+    print("x walls/listing/sources:", str(e)[:100]); ok = False
+try:
+    from .planner import Planner
+    p = Planner()
+    print(("v" if p.installed() else "-") + " thinking model: " + ("installed" if p.installed() else "not installed (rule-based replies only)"))
+except Exception as e:
+    print("- thinking model:", str(e)[:80])
+try:
+    from .google import Google
+    g = Google()
+    print(("v" if g.connected() else "-") + " google: " + ("connected" if g.connected() else "not connected on this machine → send `connect google` to the bot"))
+except Exception as e:
+    print("- google:", str(e)[:80])
 sys.exit(0 if ok else 1)

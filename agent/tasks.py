@@ -117,12 +117,6 @@ class Tasks:
         return self.on_hands(_shot, timeout=20)
 
     # ---- one browser, reused (so the owner can watch one window instead of a flicker of new ones) ----
-    def browser(self):
-        if self._browser is None or not self._browser.alive():
-            self._browser = Browser(log=self.log, viewer=self.viewer, lean=self.low_mem)
-            self._browser.walls = self.walls
-        return self._browser
-
     def close_browser(self):
         if self._browser is None:
             return
@@ -1016,6 +1010,19 @@ class Tasks:
     last_native = None        # (kind, payload) for the native Google Doc template of the last document (progress.Templates)
     owner_change = ""         # what the owner said mid-job ("also look at prices in germany") — research reads one more page for it
 
+    _machine_fault = ""          # the last machine-level failure text ("" when the last browser start went fine)
+
+    def browser(self):
+        if self._browser is None or not self._browser.alive():
+            try:
+                self._browser = Browser(log=self.log, viewer=self.viewer, lean=self.low_mem)
+            except Exception as e:
+                Tasks._machine_fault = str(e)[:200]
+                raise
+            Tasks._machine_fault = ""
+            self._browser.walls = self.walls
+        return self._browser
+
     def run(self, command, want_doc=None):
         if want_doc is not None:
             self.want_doc = bool(want_doc)
@@ -1060,5 +1067,24 @@ class Tasks:
                 out = "Tasks I can do: research <topic> · compare <product> · summarize <url> · visit <site> | <question> · watch <video url or topic> · trending [topic] · comments <video> · exam [n]"
         except Exception as e:  # noqa
             out = f"Task failed: {type(e).__name__}: {str(e)[:200]}"
+            fix = self.machine_fix(str(e))
+            if fix:                                                    # the machine, not the job: say what to do, in the owner's words
+                out += "\n" + fix
+                self.log("machine_fault", cmd=cmd, error=str(e)[:120])
         self.log("task_done", cmd=cmd, ms=int((time.time() - t0) * 1000), chars=len(out))
         return out
+
+    @staticmethod
+    def machine_fix(error):
+        """A plain-words repair line for failures that are the PC's, not the plan's (browser missing, module missing, no space)."""
+        e = error or ""
+        if re.search(r"BrowserType\.launch|Executable doesn't exist|playwright install", e, re.I):
+            return ("🔧 My browser is not installed on this machine, so I cannot read any web page until it is. Run the doctor line once "
+                    "(PowerShell): wsl bash -lc \"curl -sL https://raw.githubusercontent.com/dreamer2664/businessai2/main/scripts/doctor.sh | bash\" — it installs it and restarts me.")
+        if re.search(r"No module named|ModuleNotFoundError", e, re.I):
+            return "🔧 A Python piece is missing on this machine. The doctor line fixes it (PowerShell): wsl bash -lc \"curl -sL https://raw.githubusercontent.com/dreamer2664/businessai2/main/scripts/doctor.sh | bash\""
+        if re.search(r"No space left|ENOSPC|Errno 28", e, re.I):
+            return "🔧 The disk is full — say /disk clean and I free what is safe to free."
+        if re.search(r"cannot allocate memory|MemoryError|out of memory", e, re.I):
+            return "🔧 The machine ran out of memory — close other programs or restart the PC, then ask me again."
+        return ""
