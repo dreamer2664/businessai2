@@ -51,6 +51,20 @@ INFO = re.compile(r"\b(is|are|means|refers|defin\w*|includ\w*|consist\w*|typical
                   r"should|must|need\w*|requir\w*|allow\w*|help\w*|reduc\w*|improv\w*|measur\w*|track\w*|test\w*|compar\w*|"
                   r"choos\w*|avoid\w*|check\w*|look for|at least|minimum|maximum|percentage|feedback|rating\w*|review\w*)\b", re.I)
 STORY = re.compile(r"\b(he|she|his|her|him|they|their|I|my|we|our|us)\b", re.I)
+# Italian + marketplace vocabulary (TRIM_LANG=it-en): help centres, guides and video walkthroughs are how-to text in the second
+# person ("puoi", "devi", "you can") — informative for a shopper, not a story. Counted as INFO, and "you/tu" is not a story word.
+INFO_IT = re.compile(r"\b(è|sono|significa|indica|comprende|include|consiste|di solito|in genere|solitamente|media|percentuale|costa|costano|prezz\w*|"
+                     r"commission\w*|spedizion\w*|spedir\w*|consegn\w*|rimbors\w*|res[oi]|restituz\w*|protezion\w*|acquist\w*|vend\w*|venditor\w*|"
+                     r"compr\w*|acquirent\w*|ordin\w*|annunci\w*|articol\w*|prodott\w*|pagament\w*|pag\w*|carta|bonifico|contanti|postepay|paypal|"
+                     r"tracci\w*|pacco|corriere|punto di ritiro|locker|inpost|dogan\w*|iva|dazi\w*|tagli\w*|recension\w*|valutazion\w*|feedback|"
+                     r"truff\w*|frod\w*|segnal\w*|blocc\w*|verific\w*|account|profilo|password|codice|email|e-mail|"
+                     r"pu[oò]i|potete|devi|dovete|bisogna|occorre|consigli\w*|evit\w*|controll\w*|scegli\w*|imposta\w*|clicc\w*|selezion\w*|"
+                     r"entro|prima|dopo|giorni|ore|settimane|minuti|euro|€|almeno|massimo|minimo|gratis|gratuit\w*|"
+                     r"you can|you should|you must|you need|make sure|tip|tips|option|options|step|steps|button|tap|click|select|choose|"
+                     r"seller|buyer|listing|shipping|delivery|refund|return|protection|fee|scam|fraud|verify|dispute|tracking|parcel|"
+                     r"courier|customs|duty|size|review|rating|account|offer|bundle|discount|coupon|wallet|payment|days|hours|weeks)\b", re.I)
+STORY_IT = re.compile(r"\b(he|she|his|her|him|they|their|I|my|we|our|us|io|mio|mia|miei|mie|noi|nostro|nostra|lui|lei|loro)\b", re.I)
+LANG = os.environ.get("TRIM_LANG", "en")
 
 
 def norm(t):
@@ -58,12 +72,20 @@ def norm(t):
 
 
 def density(t):
-    words = re.findall(r"[A-Za-z0-9%$€]+", t)
+    words = re.findall(r"[A-Za-zÀ-ÿ0-9%$€]+", t)
     if not words:
         return 0
+    if LANG == "it-en":
+        info = len(INFO.findall(t)) + len(INFO_IT.findall(t)) + 2 * len(re.findall(r"\d", t)) / max(1, len(t) / 40)
+        story = len(STORY_IT.findall(t))
+        return (info - 0.5 * story) / len(words) * 100
     info = len(INFO.findall(t)) + 2 * len(re.findall(r"\d", t)) / max(1, len(t) / 40)
     story = len(STORY.findall(t))
     return (info - 0.8 * story) / len(words) * 100
+
+
+FILLER_SOFT = re.compile(r"^(here'?s how|learn (how|why|what)|find out|in this guide|this guide|keep reading|read on|"
+                         r"want to|ready to|whether you|no matter|if you're (looking|ready|new)|updated|(faq|frequently asked questions))", re.I)
 
 
 def keep(p, title):
@@ -72,8 +94,9 @@ def keep(p, title):
     if len(p) < MIN_CHARS:
         return False
     if FILLER.search(p):
-        return False
-    if re.search(r"https?://|www\.", p):
+        if not (LANG == "it-en" and FILLER_SOFT.search(p) and len(p) > 160 and not re.search(r"subscribe|click|visit|sign up|free trial", p, re.I)):
+            return False
+    if re.search(r"https?://|www\.", p) and not (LANG == "it-en" and title.startswith("handbook:")):   # the handbook's search URLs are the knowledge
         return False
     if p.count("?") >= 2 and len(p) < 300:          # question lists
         return False
@@ -109,7 +132,7 @@ def passages(text, title):
             heading = p[3:].strip()
             continue
         if len(p) < MIN_CHARS and len(p) >= 30 and buf and not FILLER.search(p) and density(p) >= 4.5 \
-                and not re.search(r"https?://|www\.", p):
+                and (not re.search(r"https?://|www\.", p) or title.startswith("handbook:")):
             buf = buf + " " + p            # short fact ("Try to work with suppliers who have at least 95%…") rides along
             continue
         if not keep(p, title):

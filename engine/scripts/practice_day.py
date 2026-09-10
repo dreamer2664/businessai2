@@ -17,7 +17,7 @@ os.environ.pop("DISPLAY", None)
 os.environ["BAI_STAGE_PORT"] = "8085"
 os.environ["BAI_VIEW_PORT"] = "8767"
 os.environ["BAI_STORE_PORT"] = "8084"
-os.environ["BAI_ACCOUNT_EMAIL"] = "busynessai001@gmail.com"
+os.environ["BAI_ACCOUNT_EMAIL"] = "stagebot@example.com"
 os.environ["BAI_ACCOUNT_PASSWORD"] = "BusinessAI001!"
 shutil.rmtree(os.environ["BAI_STATE"], ignore_errors=True)
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

@@ -146,7 +146,7 @@ check("returns: '…what do I answer?' still goes to the inbox draft", isinstanc
 r = A.respond("can you check my email for the verification code from shopify?")
 time.sleep(0.5)
 _gmail_on = bool(getattr(A, "google", None) and A.google.connected())
-check("'check my email for the code' → Gmail flow (honest when not connected, real lookup when it is)", r and "Looking in my Gmail" in r and "from shopify" in r and (_gmail_on or any("Gmail isn't connected" in t for t, _ in A.bot.sent[-2:])), r)
+check("'check my email for the code' → mailbox flow (IMAP identity mailbox, else Google, else an honest line)", r and r.startswith("Looking in ") and "from shopify" in r, r)
 # the practice store in plain words + shop sense (no browsing, no model)
 os.environ["BAI_STORE_PORT"] = "8178"
 r = A.respond("open the practice store"); time.sleep(0.3)

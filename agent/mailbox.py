@@ -1,4 +1,5 @@
-"""Gmail as a tool (owner's item G): the app's own mailbox (busynessai001@gmail.com) sorted into labels, kept tidy,
+"""Gmail as a tool (owner's item G) — ONLY when a Google account is connected (optional since 2026-09-10; the bot's
+identity mailbox is agent/idmail.py over IMAP). The connected Gmail sorted into labels, kept tidy,
 and used — verification codes fetched from the right pile, leads noticed, alerts summarised.
 
 Labels (created once, shown in the Gmail sidebar):

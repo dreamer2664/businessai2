@@ -61,7 +61,7 @@ awk -F= '/^[A-Za-z_][A-Za-z0-9_]*=/ {v=substr($0,index($0,"=")+1); gsub(/["\047]
 for k in TELEGRAM_BOT_TOKEN GITHUB_TOKEN; do
   grep -q "^$k=.." .secrets/env 2>/dev/null || echo "!! $k is EMPTY - the bot cannot run without it"
 done
-[ -f .secrets/google_client.json ] && echo "google_client.json: present" || echo "google_client.json: missing (needed later for Drive/Gmail)"
+[ -f .secrets/google_client.json ] && echo "google_client.json: present" || echo "google_client.json: missing (optional: Drive/Docs only; the mailbox is IMAP)"
 
 # 3. python sanity + the browser (seven jobs failed on 2026-09-09 because Chromium was not installed — the doctor now repairs it)
 echo "--- python ---"
@@ -112,7 +112,14 @@ if systemctl --user list-units >/dev/null 2>&1; then
   journalctl --user -u businessai --since "1 hour ago" --no-pager 2>&1 | grep -iE "poll_error|handler_error|traceback|401|409|conflict|unauthorized" | tail -8 || echo "(none)"
   echo "restarts (last hour): $(journalctl --user -u businessai --since '1 hour ago' --no-pager 2>&1 | grep -c 'Started businessai')"
 fi
-echo "--- google client file ---"
-python3 -c "import json;d=json.load(open('.secrets/google_client.json'));i=d.get('installed',d.get('web',{}));print('valid JSON, type:',('installed' if 'installed' in d else ('web' if 'web' in d else '?')),'| id+secret:',bool(i.get('client_id')) and bool(i.get('client_secret')))" 2>&1
+echo "--- identity mailbox (IMAP; the e-mail I give to sites) ---"
+if grep -q "^BAI_MAIL_PASSWORD=" .secrets/env 2>/dev/null; then
+  ( set -a; . ./.secrets/env; set +a; python3 -m agent.selfcheck 2>/dev/null | grep -i "identity mailbox" ) || echo "(selfcheck did not report the mailbox)"
+  grep -q "busynessai001" state/accounts.json 2>/dev/null && echo "note: state/accounts.json still lists the banned mailbox — those entries are retired as 'lost' on the next start"
+else
+  echo "not set — run: sh scripts/set_mail.sh <address> <base64 app-password>"
+fi
+echo "--- google (optional: Drive/Docs only) ---"
+python3 -c "import json;d=json.load(open('.secrets/google_client.json'));i=d.get('installed',d.get('web',{}));print('client file: valid, type:',('installed' if 'installed' in d else ('web' if 'web' in d else '?')),'| id+secret:',bool(i.get('client_id')) and bool(i.get('client_secret')))" 2>/dev/null || echo "client file: none (fine — optional)"
 echo "--- REPORT END ---"
 echo "Paste everything above back to the chat."

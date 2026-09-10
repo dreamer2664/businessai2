@@ -138,3 +138,16 @@ Reality check on 2026-09-09 with the real browser:
   until/unless a Google account is connected again (the HTML/PDF document on Telegram is the deliverable).
 - Your home address got flagged today because the bot probed many shops in a row. It now browses gently at home (12 s between
   hits on a site, `/markets` at most every 6 h). If a sign-up form gives you endless CAPTCHAs, use the phone on 4G.
+
+## 2026-09-10 (while you were out) — your three requests
+- **Residue of the old e-mail**: swept code, docs, tests and state. Real finds fixed: "check my email for the code" still used
+  Google; the fallback line still trusted the banned address as "you"; the Google connect text named the old account. Nothing
+  in the bot depends on Google any more (Docs/Drive are optional extras).
+- **You sign up, it logs in — yes, and it's the better way.** Create the accounts yourself (phone on 4G if your home IP still
+  gives CAPTCHAs), use spamcarlo019@gmail.com or any address, a different password per site, then tell the bot in Telegram:
+  `/accounts set vinted.it spamcarlo019@gmail.com <password>` (same for temu.com, shein.com, subito.it, wallapop.com …).
+  It deletes your message right away, keeps the login in .secrets/sites.json on the PC only, and from then on it only logs in
+  there — never a sign-up, never a code needed. `/accounts logins` shows what it has. Tip: on Vinted/Subito/Wallapop it
+  doesn't need an account to search; Temu is the one that truly needs it; Shein for fewer puzzles.
+- **Training**: a new knowledge pack about Vinted, Subito, Wallapop, Temu, Shein, AliExpress, DHgate, Banggood, EU rules and
+  scam patterns — from the sites' own help pages, guides, Wikipedia and 15 video walkthroughs boiled down to the teaching.

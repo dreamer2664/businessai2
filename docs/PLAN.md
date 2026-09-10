@@ -441,3 +441,27 @@ What was built, and why it differs:
   '/markets all' for the rest. Rule: the owner's IP reputation is shared with their own browsing — never burst.
 - New suite engine/scripts/score_idmail.py (18 checks, fake IMAP server over TLS: login, fresh-only, code/link extraction,
   read-only commands, alias filter, Gmail app-password hint, host guesses, lost identity retired, codes via IMAP without Google).
+
+## 2026-09-10 (owner away) — residue sweep after the identity change; owner-made logins; marketplaces knowledge pack — done
+**Sweep** (every mention of the banned mailbox and every place that assumed "Google = my mailbox"):
+- `fetch_mail_code` ("check my email for the code") still went to Google only → IMAP first. The '/google connect' text named
+  the banned account → now "the Google account that owns the OAuth client (optional, separate from my e-mail identity)".
+- `.secrets.example` documents BAI_MAIL_PASSWORD / IMAP host / alias instead of "codes via the Gmail API". `mailbox.py` +
+  docs/MAILBOX.md say they apply only when a Google account is connected. `state/fallback.json` "allowed senders" carried the
+  banned address (also on the PC) → `fallback._load` drops it forever. `idmail` never falls back to the site password (a
+  wrong-password storm on the owner's Gmail is the one thing that must never happen). Tests/stages use stagebot@example.com.
+  Doctor: "identity mailbox" section, Google marked optional. A no-Google-files run was exercised: /mail, /accounts, /progress,
+  /library, "check my email" all answer sensibly. /progress wording: "optional", not "connect first".
+**Owner-made logins** (`/accounts set <site> <email> <password>`): stored in .secrets/sites.json (mode 600, gitignored, BAI_SITES_FILE
+for tests); the owner's message is deleted from the chat and logged as `********`; `config.redact()` also hides those passwords;
+`Accounts.known()` treats such a site as active-made-by-owner; `login()` goes straight to the site's known login page
+(`LOGIN_URLS`); `_fill_visible_form` types the site's e-mail/password; a failed login says "check with /accounts set", never a
+sign-up; `/accounts logins` lists sites without passwords; `/accounts forget <site>` drops the login. score_accounts 24 → 30.
+**Marketplaces pack** (release/packs/marketplaces.kdw): sources = the sites' own help centres through the real browser
+(`packs/browser_fetch.py`: Vinted, Subito, Wallapop, Shein — Zendesk/SPA pages that refuse plain HTTP), Wikipedia (it+en),
+EU consumer / customs pages, Altroconsumo / Sky / guide articles, 15 YouTube walkthroughs distilled by `packs/distill_video.py`
+(vlog talk out, ~17–23 % kept), and `packs/sources/marketplaces_handbook.md` (11 sections written from what I met on the
+sites: search URLs, JSON shapes, walls, traps, judging deals, browsing gently). `packs/trim.py` learned TRIM_LANG=it-en
+(Italian + marketplace vocabulary counts as informative; second-person how-to is not a story; the handbook's URLs are kept).
+Temu shows nothing to a visitor (even policies redirect to login) → Temu knowledge is third-party only. Score set tests/marketplaces.txt: **40/40**; 1.3 MB; published on the GitHub Release as marketplaces.kdw
+(`Brain.RELEASE_PACKS` + get_brain.sh fetch it — the PC gets it on the next start, no owner step).

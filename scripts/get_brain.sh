@@ -8,7 +8,7 @@ mkdir -p release/packs
 for f in kdr-brain-lite brain.kdr; do
   [ -s "release/$f" ] || { echo "fetching $f"; curl -fL --progress-bar -o "release/$f" "https://github.com/$REPO/releases/download/latest/$f"; }
 done
-for p in ${BAI_PACKS:-business.kdw operations.kdw dropship.kdw}; do
+for p in ${BAI_PACKS:-business.kdw operations.kdw dropship.kdw marketplaces.kdw}; do
   echo "fetching pack $p"; curl -fL --progress-bar -o "release/packs/$p" "https://github.com/$REPO/releases/download/latest/$p"
 done
 chmod +x release/kdr-brain-lite

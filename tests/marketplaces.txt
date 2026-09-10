@@ -1,0 +1,59 @@
+# Marketplaces pack — score set. One question per line: question<TAB>accepted answers separated by |
+# Built 2026-09-10 from: the sites' own help centres (Vinted, Subito, Wallapop, Shein), Wikipedia, EU consumer pages,
+# Altroconsumo / Sky / guide articles, distilled video walkthroughs, and packs/sources/marketplaces_handbook.md.
+
+## Vinted
+What is Vinted's Buyer Protection for?	not as described|doesn't arrive|does not arrive|damaged|refund|protezione acquisti|rimborso
+Who pays shipping on Vinted?	buyer|acquirente|compratore
+What is a Vinted price of 1 euro usually?	placeholder|make me an offer|offer|contattami|not a real price
+How long does a Vinted buyer have to report a problem after delivery?	2 days|two days|48 hours|due giorni
+Why never pay outside the Vinted app?	protection|protezione|lose|scam|truffa
+What does "new with tags" mean on Vinted?	never worn|unworn|tags|cartellino|nuovo
+What is a Vinted Pro seller?	business|professional|company|azienda|professionale|partita iva
+How do you make an offer on Vinted?	offer|offerta|make an offer|lower price
+
+## Subito
+What is TuttoSubito?	shipping|spedizione|protection|protezione|pay in-app|pagamento
+What is the classic Subito scam with Postepay?	ricarica|postepay|pay before|pagare prima|anticipo|advance
+Does Subito show ratings for private sellers?	no|does not|non mostra|nessuna valutazione|no rating
+What does "spedizione disponibile" mean on a Subito ad?	ship|spedizione|can be shipped|spedire
+
+## Wallapop
+How does Wallapop shipping protect the buyer?	confirm|conferma|protection|protezione|refund|rimborso|payment held|trattenuto
+Where is Wallapop from?	spain|spanish|spagna|barcelona|spagnola
+What is the default way to buy on Wallapop?	in person|di persona|local|pick up|ritiro|hand
+
+## Temu
+Who owns Temu?	pdd|pinduoduo|pdd holdings
+Where do Temu goods ship from?	china|cina|chinese
+How long does Temu delivery to Italy usually take?	5|6|7|8|9|10|15|days|giorni|weeks|settimane
+What does Temu show a visitor without an account?	login|nothing|accedi|registrati|sign in|account
+What is Temu's return window?	90 days|90 giorni|90
+Do Temu sizes run small?	small|asian|smaller|piccole|taglia
+
+## Shein
+What is Shein known for?	fast fashion|clothing|abbigliamento|moda|fashion
+What is Shein's return window?	30 days|30 giorni|30
+What happens to a headless browser on Shein search?	captcha|challenge|risk|puzzle|verification|verifica
+Is the first Shein return free?	free|gratis|gratuito|first return
+
+## AliExpress / DHgate / Banggood
+What is AliExpress Choice?	faster|free shipping|free returns|5|10|days|bundled|spedizione gratuita
+Who owns AliExpress?	alibaba
+What is DHgate known for?	wholesale|replica|counterfeit|china|b2b|small
+Does Banggood have EU warehouses?	yes|eu warehouse|europe|magazzino
+
+## Buying from outside the EU
+Under what value are goods from China VAT-paid at checkout with no customs surprise?	150|€150|150 euro
+What is IOSS?	vat|iva|import|one stop shop|checkout|prepaid
+How many days does an EU buyer have to withdraw from an online purchase from a business?	14|14 days|14 giorni|fourteen
+Does the right of withdrawal apply when buying from a private person?	no|does not|non si applica|private|privato
+
+## Judging deals and scams
+Why is a working Xbox Series X at 30 euro suspicious?	too cheap|below|floor|scam|game|accessory|part|placeholder
+What is an advance-fee scam?	pay|upfront|advance|before|fee|anticipo
+What is a chargeback?	reverse|card|bank|dispute|reversal|storno
+What is escrow?	third party|holds|held|released|trusted|deposit
+What signals a good second-hand seller?	feedback|rating|reviews|verified|account age|recensioni|valutazioni
+What is a counterfeit consumer good?	fake|imitation|infring|trademark|unauthorized|contraff
+Why should the bot browse gently from a home address?	reputation|flag|captcha|shared|verify you are human|ban|blocked

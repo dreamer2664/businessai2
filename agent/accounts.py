@@ -74,6 +74,14 @@ class Identity:
         return None
 
 
+SITE_CREDS = config.pathlib.Path(os.environ.get("BAI_SITES_FILE") or (config.ROOT / ".secrets" / "sites.json"))     # {"vinted.it": {"email", "password", "login"}} — the owner's hand-made accounts, never in git
+LOGIN_URLS = {"vinted.it": "https://www.vinted.it/member/signup/select_type?ref_url=%2F", "vinted.com": "https://www.vinted.com/member/signup/select_type",
+              "temu.com": "https://www.temu.com/it/login.html", "shein.com": "https://it.shein.com/user/auth/login", "subito.it": "https://areariservata.subito.it/login_form",
+              "wallapop.com": "https://it.wallapop.com/login", "ebay.it": "https://signin.ebay.it/", "aliexpress.com": "https://login.aliexpress.com/",
+              "banggood.com": "https://www.banggood.com/login.html", "dhgate.com": "https://www.dhgate.com/login.html", "amazon.it": "https://www.amazon.it/ap/signin",
+              "etsy.com": "https://www.etsy.com/signin", "depop.com": "https://www.depop.com/login/"}
+
+
 class Accounts:
     LOST_IDENTITIES = ("busynessai001@gmail.com",)   # mailboxes we no longer have (banned 2026-09-10): accounts made with them are unreachable
     notify_photo = None             # set by core: (jpeg_bytes, caption) → the owner's phone
@@ -88,6 +96,73 @@ class Accounts:
         from .idmail import IdMail
         self.mail = IdMail(log=self.log)                            # plain IMAP, read-only: where verification codes arrive
         self._retire_lost()
+
+    # ---- the owner's own hand-made accounts (site → e-mail + password) ----------------------------
+    @staticmethod
+    def _norm_site(site):
+        return re.sub(r"^(www|it|m)\.", "", re.sub(r"^https?://", "", (site or "").strip().lower()).split("/")[0])
+
+    def site_creds(self, url_or_site):
+        """Credentials the owner gave for this site (.secrets/sites.json), or None → the identity defaults."""
+        site = self._norm_site(url_or_site)
+        try:
+            d = json.loads(SITE_CREDS.read_text()) if SITE_CREDS.exists() else {}
+        except Exception:
+            d = {}
+        for k, v in d.items():
+            if site == k or site.endswith("." + k) or k.endswith("." + site.split(".")[0] + "." + site.split(".")[-1]) or site.split(".")[0] == k.split(".")[0]:
+                return v
+        return None
+
+    def set_site_creds(self, site, email, password, login_url=None):
+        """'/accounts set vinted.it me@x.com pass' — the owner signed up by hand; I only log in from now on."""
+        site = self._norm_site(site)
+        if not site or "." not in site:
+            site = {"vinted": "vinted.it", "temu": "temu.com", "shein": "shein.com", "subito": "subito.it", "wallapop": "wallapop.com", "ebay": "ebay.it",
+                    "aliexpress": "aliexpress.com", "banggood": "banggood.com", "dhgate": "dhgate.com", "amazon": "amazon.it", "etsy": "etsy.com", "depop": "depop.com"}.get(site, site)
+        if not (re.fullmatch(r"[a-z0-9.-]+\.[a-z]{2,}(?::\d+)?", site) or re.fullmatch(r"(?:localhost|\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?", site)):
+            return None
+        try:
+            d = json.loads(SITE_CREDS.read_text()) if SITE_CREDS.exists() else {}
+        except Exception:
+            d = {}
+        d[site] = {"email": email.strip(), "password": password, "login": login_url or LOGIN_URLS.get(site, ""), "t": time.strftime("%Y-%m-%d %H:%M"), "by": "owner"}
+        SITE_CREDS.parent.mkdir(parents=True, exist_ok=True)
+        SITE_CREDS.write_text(json.dumps(d, ensure_ascii=False, indent=1))
+        try:
+            os.chmod(SITE_CREDS, 0o600)
+        except Exception:
+            pass
+        # the account book: this site is now "active, made by the owner" — never a sign-up attempt again
+        a = next((x for x in self.data["accounts"] if x["site"] == site), None)
+        rec = {"site": site, "email": email.strip(), "status": "active", "note": "account made by the owner — I only log in", "t": time.strftime("%Y-%m-%d %H:%M")}
+        if a:
+            a.update(rec)
+        else:
+            self.data["accounts"].append(rec)
+        self._save()
+        return site
+
+    def forget_site_creds(self, site):
+        site = self._norm_site(site)
+        try:
+            d = json.loads(SITE_CREDS.read_text()) if SITE_CREDS.exists() else {}
+        except Exception:
+            d = {}
+        hit = [k for k in d if k == site or k.split(".")[0] == site.split(".")[0]]
+        for k in hit:
+            d.pop(k, None)
+        SITE_CREDS.write_text(json.dumps(d, ensure_ascii=False, indent=1))
+        return bool(hit)
+
+    def creds_text(self):
+        try:
+            d = json.loads(SITE_CREDS.read_text()) if SITE_CREDS.exists() else {}
+        except Exception:
+            d = {}
+        if not d:
+            return "No hand-made site logins yet. Give me one with: /accounts set <site> <email> <password> (kept in .secrets/sites.json on this machine, never in git)."
+        return "Site logins you gave me (passwords never shown):\n" + "\n".join(f"• {k}: {v.get('email', '?')} (since {v.get('t', '?')[:10]})" for k, v in d.items())
 
     def _retire_lost(self):
         """Accounts created with a mailbox we lost are marked so they are never logged into or re-used."""
@@ -158,7 +233,12 @@ class Accounts:
 
     def known(self, url):
         site = self.site_of(url)
-        return next((a for a in self.data["accounts"] if a["site"] == site and a.get("status") != "lost"), None)
+        a = next((a for a in self.data["accounts"] if a["site"] == site and a.get("status") != "lost"), None)
+        if a is None:
+            c = self.site_creds(url)
+            if c:
+                a = {"site": site, "email": c.get("email", ""), "status": "active", "note": "account made by the owner", "t": c.get("t", "")}
+        return a
 
     # ---- safe sign-up: fakes first, real sites only when approved (item 6) --------------------------
     def is_local(self, url):
@@ -211,7 +291,8 @@ class Accounts:
         if a:
             a.update(status=status, note=note[:200], t=time.strftime("%Y-%m-%d %H:%M"))
         else:
-            self.data["accounts"].append({"site": site, "email": self.id.email, "status": status, "note": note[:200], "t": time.strftime("%Y-%m-%d %H:%M")})
+            creds = self.site_creds(url) or {}
+            self.data["accounts"].append({"site": site, "email": creds.get("email") or self.id.email, "status": status, "note": note[:200], "t": time.strftime("%Y-%m-%d %H:%M")})
         self._save()
         self.log("account", site=site, status=status)
 
@@ -239,13 +320,15 @@ class Accounts:
         if NEVER_SIGN_UP.search(url):
             return False, "that site is on my never-sign-up list (money, big platforms with strict robot bans)."
         a = self.known(url)
-        if a and a["status"] in ("blocked", "pending", "failed") and a.get("email") == self.id.email:
+        if a and a["status"] in ("blocked", "pending", "failed") and a.get("email") == self.id.email and not self.site_creds(url):
             a = None                                                    # an earlier try stopped at a puzzle / a code: not final — try again now
         if a and a["status"] == "active":
             ok, note = self.login(b, url)
             if ok:
                 return True, "logged in"
             self.log("login_failed", site=a["site"], note=note[:80])
+            if self.site_creds(url):
+                return False, f"I have your login for {a['site']} but it did not work: {note}. Check the e-mail/password with /accounts set {a['site']} … (I never try to sign up there myself)."
             return False, f"I have an account on {a['site']} but could not log in: {note}"
         if not allow_signup:
             return False, "no account there and sign-up not allowed for this task"
@@ -274,14 +357,25 @@ class Accounts:
         return self.signup(b, url)
 
     def _fill_visible_form(self, b, max_fields=8):
-        """Type identity values into the visible form fields by label. Returns (filled labels, unknown labels)."""
+        """Type identity values into the visible form fields by label. Returns (filled labels, unknown labels).
+        On a site whose account the owner made by hand, that e-mail/password is used instead of the identity defaults."""
         b.read()
         filled, unknown = [], []
+        creds = None
+        try:
+            creds = self.site_creds(b.page.url)
+        except Exception:
+            creds = None
         for it in b.items:
             if it["role"] not in ("textbox", "input", "email", "password", "tel", "combobox", "select") or len(filled) >= max_fields:
                 continue
             label = it.get("label") or ""
             v = self.id.value_for(label)
+            if creds and v is not None:
+                if v == self.id.email and creds.get("email"):
+                    v = creds["email"]
+                elif v == self.id.password and creds.get("password"):
+                    v = creds["password"]
             if v is None:
                 if label and not re.search(r"search|cerca|promo|coupon|referral", label, re.I):
                     unknown.append(label[:30])
@@ -389,7 +483,9 @@ class Accounts:
     def login(self, b, url):
         site = self.site_of(url)
         try:
-            b.open(url)
+            creds = self.site_creds(url) or {}
+            start = creds.get("login") or LOGIN_URLS.get(site) or LOGIN_URLS.get(re.sub(r"^(www|it|m)\.", "", site)) or url
+            b.open(start)
             b.read()
             for it in b.items:
                 if it["role"] in ("link", "button") and self.LOGIN_WORDS.search(it.get("label") or "") and not self.SIGNUP_WORDS.search(it.get("label") or ""):

@@ -98,7 +98,8 @@ class Fallback:
     def _load(self):
         try:
             d = json.loads(STATE_FILE.read_text())
-            return {"seen": d.get("seen", [])[-200:], "allowed": d.get("allowed", []),
+            lost = {"busynessai001@gmail.com"}                                  # the bot's banned mailbox is nobody's address any more: never an "owner" sender
+            return {"seen": d.get("seen", [])[-200:], "allowed": [a for a in d.get("allowed", []) if a.lower() not in lost],
                     "last_poll": d.get("last_poll", 0), "tg_down": d.get("tg_down", False),
                     "tg_offset": d.get("tg_offset", 0), "daily": d.get("daily", False),
                     "last_check_day": d.get("last_check_day", ""), "answered": int(d.get("answered", 0))}

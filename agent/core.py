@@ -353,6 +353,18 @@ class Agent:
             self.log("in", text=f"[photo] {text}")
             threading.Thread(target=self.look_at_photo, args=(chat_id, photo[-1]["file_id"], text), daemon=True).start()
             return
+        m_set = re.match(r"^/accounts?\s+set\s+(\S+)\s+(\S+)\s+(\S.*)$", text, re.I | re.S)
+        if m_set:                                                            # a password: never logged, and the message is removed from the chat
+            self.log("in", text=f"/accounts set {m_set.group(1)} {m_set.group(2)} ********")
+            try:
+                self.bot.delete_message(chat_id, msg.get("message_id"))
+            except Exception:
+                pass
+            site = self.accounts.set_site_creds(m_set.group(1), m_set.group(2), m_set.group(3).strip())
+            self.bot.send(chat_id, (f"🔐 Saved your login for {site} ({m_set.group(2)}) in .secrets/sites.json on this machine — never in git, never in logs. "
+                                    f"From now on I only log in there, never sign up. I deleted your message with the password from this chat.") if site else
+                          "That doesn't look like a site. Use: /accounts set vinted.it me@example.com yourpassword")
+            return
         self.log("in", text=text)
         if (fwd or re.match(r"^/customer\b", text, re.I)) and not self.editing:
             body = re.sub(r"^/customer\b[:\s]*", "", text, flags=re.I).strip()
@@ -1164,7 +1176,7 @@ class Agent:
             return mb_
         if low.startswith("/progress") or re.fullmatch(r"(where is|show me|send me|link to)? ?(the |your |today'?s )?(progress|day log|job log)( doc(ument)?| please)?", low.strip(" ?.!")):
             if not self.google.connected():
-                return "My Google isn't connected here, so there is no progress document — /google connect first. Meanwhile 'status' tells you what I'm doing."
+                return "No Google account is connected, so there is no progress document (that part is optional) — 'status' and /lessons tell you what I did; connect a Google account any time to get the doc back."
             _, day = self.progress.day_doc()
             job = self.progress.job.get("link") if self.progress.job else None
             return (f"📝 Today's log: {day}" if day else "No day log yet (it starts with the first job).") + (f"\nCurrent job: {job}" if job else ("\nThe running job writes into the day log (no separate page — it's a short one)." if self.progress.job else ""))
@@ -1174,7 +1186,10 @@ class Agent:
                 site = self.accounts.allow_site(arg[6:])
                 return f"\u2705 {site} approved — I'll sign up there when a task needs it." if site else "I can't approve that (money sites and big-platform logins are never allowed; otherwise use /accounts allow vinted.it)."
             if arg.startswith("forget "):
-                return f"\U0001F6AB {arg[7:]} forgotten — no more sign-ups there." if self.accounts.forget_site(arg[7:]) else "That site wasn't on my approved list."
+                dropped = self.accounts.forget_site_creds(arg[7:])
+                return (f"\U0001F6AB {arg[7:]} forgotten" + (" — your login there is deleted too" if dropped else "") + " — no more sign-ups there.") if (self.accounts.forget_site(arg[7:]) or dropped) else "That site wasn't on my lists."
+            if arg in ("logins", "creds", "credentials", "set"):
+                return self.accounts.creds_text() + "\n\nTo add one: /accounts set <site> <email> <password> — I delete your message right after reading it."
             m_s = re.match(r"^(?:signup|sign up|register|login|log in)\s+(?:on\s+)?([a-z0-9.-]+)", arg)
             if m_s:
                 if self.busy:
@@ -1219,15 +1234,29 @@ class Agent:
         return self.understand(text)
 
     def fetch_mail_code(self, hint=""):
-        """'check my email for the verification code' → Gmail (official API), newest code or link, pasted to the owner."""
-        if self.google.connected():
+        """'check my email for the verification code' → the identity mailbox (IMAP) first, Google only if it still works;
+        newest code or link pasted to the owner."""
+        m = self.accounts.mail
+        if m.configured():
             try:
-                self.google._access_token()        # one cheap probe: a disabled/expired client shows up here, before a 2-minute wait
-            except Exception:
-                pass
+                code, mail = m.find_code(hint, since_minutes=30, tries=6, wait=20)
+                if code:
+                    self.notify(f"📧 Code: {code}\n(from {mail['from'][:60]} — “{mail['subject'][:60]}”)")
+                    return
+                link, mail = m.find_link(hint, since_minutes=30, tries=1, wait=1)
+                if link:
+                    self.notify(f"📧 No code, but a confirmation link arrived from {mail['from'][:60]}:\n{link}")
+                    return
+                if m.last_error:
+                    self.notify(f"📧 I couldn't read the mailbox: {m.last_error[:140]}")
+                    return
+                self.notify(f"📧 Nothing with a code{' from ' + hint if hint else ''} in the last 30 minutes in {m.address()} (I looked 6 times over 2 minutes). Ask again when it should have arrived, or check the spam folder.")
+                return
+            except Exception as e:
+                self.notify(f"📧 Mailbox check failed: {str(e)[:120]}")
+                return
         if not self.google.connected():
-            why = self.google.status() if self.google.needs_reconnect else "/google connect once, then I can read verification codes myself."
-            self.notify("My Gmail isn't connected here — " + why)
+            self.notify("📧 I have no mailbox set up here — on the PC: sh scripts/set_mail.sh <address> <base64 app-password>.")
             return
         try:
             code, mail = self.mailbox.code(hint, since_minutes=30, tries=6, wait=20)
@@ -1238,9 +1267,9 @@ class Agent:
             if link:
                 self.notify(f"📧 No code, but a confirmation link arrived from {mail['from'][:60]}:\n{link}")
                 return
-            self.notify(f"📧 Nothing with a code{' from ' + hint if hint else ''} in the last 30 minutes (I looked 6 times over 2 minutes). Ask me again when it should have arrived, or check the spam folder.")
+            self.notify(f"📧 Nothing with a code{' from ' + hint if hint else ''} in the last 30 minutes (I looked 6 times over 2 minutes).")
         except Exception as e:
-            if self.google.needs_reconnect:        # the failed call flipped the flag: say what it means, not the raw 401
+            if self.google.needs_reconnect:
                 self.notify("📧 " + self.google.status())
                 return
             self.notify(f"📧 Gmail check failed: {str(e)[:120]}")
@@ -1509,7 +1538,8 @@ class Agent:
                 return self.resend_last_doc(to_drive=direct.get("to_drive"), as_pdf=direct.get("as_pdf"))
             if direct.get("mail_code"):
                 threading.Thread(target=self.fetch_mail_code, args=(direct.get("hint") or "",), daemon=True).start()
-                return f"Looking in my Gmail for a fresh verification code{' from ' + direct['hint'] if direct.get('hint') else ''} — I'll paste it here as soon as it lands (I check for about 2 minutes)."
+                where = self.accounts.mail.address() if self.accounts.mail.configured() else "my mailbox"
+                return f"Looking in {where} for a fresh verification code{' from ' + direct['hint'] if direct.get('hint') else ''} — I'll paste it here as soon as it lands (I check for about 2 minutes)."
             if direct.get("domain"):                                                 # "is greennest.it free?" → RDAP lookup, no browser
                 return self.domain_check(direct["domain"])
             if direct.get("weather"):                                                # "what's the weather in bergamo" → Open-Meteo (free, no key)
@@ -1589,7 +1619,12 @@ class Agent:
                 return "Hi! Tell me what you need."
         if b["kind"] == "ask":
             self.pace.set(b["pace"], b["goal"])
-            ans = self.tasks.ask(text)
+            # a live fact about a specific listing/price ("does temu sell the cork case cheaper?", "how much is X on vinted now")
+            # is never answered from a knowledge pack — packs know how sites work, not today's prices
+            live_q = re.search(r"\b(cheaper|cheapest|price|prezzo|costa|cost|how much|quanto|in stock|available|disponibile|sells?|vende)\b", low) and \
+                re.search(r"\b(temu|shein|vinted|subito|wallapop|aliexpress|dhgate|banggood|ebay|amazon|etsy)\b", low) and \
+                re.search(r"\b(the|this|that|our|my|il|la|questo|quella|nostro)\s+\w+", low)
+            ans = None if live_q else self.tasks.ask(text)
             if ans and not re.search(r"\b(does not|doesn't|do not|don't) (contain|answer|mention|provide|include)\b|no evidence|not enough (evidence|information)", ans, re.I):
                 self.pace.finish()
                 return ans
@@ -3026,7 +3061,7 @@ class Agent:
                 url = g.connect_link(prefer_port=8097)
             except Exception as e:
                 return f"Couldn't start the Google connection: {e}"
-            return ("Open this link in a browser where you're logged in as my account (busynessai001@gmail.com), click Advanced → Go to businessai → "
+            return ("Open this link in a browser logged in as the Google account that owns the OAuth client (NOT the bot's mailbox — Google Docs/Drive are optional and separate from my e-mail identity), click Advanced → Go to businessai → "
                     "tick everything → Continue:\n" + url +
                     "\n\nIf the last page fails to load (it points at localhost on my machine), just paste that page's address here and I'll finish it myself.")
         if arg in ("ls", "list", "library", "files"):

@@ -144,6 +144,7 @@ class Browser:
                       extra_http_headers={"Accept-Language": "it-IT,it;q=0.9,en;q=0.7"})   # the owner is in Italy: sites answer in Italian, prices in EUR, fewer "where do you live?" popups
         if self.session_file.exists() and self.session_file.stat().st_size > 2:
             try:
+                self._prune_session()                                    # no Google cookies (the bot has no Google account any more)
                 ctx_kw["storage_state"] = str(self.session_file)
             except Exception:
                 pass
@@ -198,6 +199,19 @@ class Browser:
             pass
 
     # ---- lifecycle -----------------------------------------------------
+    def _prune_session(self):
+        """Drop cookies for domains the bot must not carry around (Google — no account there since 2026-09-10)."""
+        import json as _j
+        try:
+            d = _j.loads(self.session_file.read_text())
+            before = len(d.get("cookies", []))
+            d["cookies"] = [c for c in d.get("cookies", []) if not re.search(r"google\.|youtube\.com|gstatic|accounts\.google", c.get("domain", ""))]
+            if len(d["cookies"]) != before:
+                self.session_file.write_text(_j.dumps(d))
+                self.log("browser_session_pruned", dropped=before - len(d["cookies"]))
+        except Exception:
+            pass
+
     def save_session(self):
         """Cookies + local storage → state/browser/session.json (called on close and after a login / a passed check)."""
         try:

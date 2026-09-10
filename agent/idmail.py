@@ -9,7 +9,7 @@ attached, API calls from two IPs, automated tidying every 15 minutes. The lesson
 
 Config (.secrets/env on the PC, never in git):
   BAI_ACCOUNT_EMAIL=spamcarlo019@gmail.com          the address the bot gives to sites
-  BAI_MAIL_PASSWORD=<16-letter Gmail app password>  IMAP password (falls back to BAI_ACCOUNT_PASSWORD)
+  BAI_MAIL_PASSWORD=<16-letter Gmail app password>  IMAP password (never falls back to the site password)
   BAI_MAIL_IMAP_HOST=imap.gmail.com                 optional: guessed from the address domain when missing
   BAI_MAIL_IMAP_PORT=993                            optional
   BAI_MAIL_ALIAS=                                   optional: an alias ("carlo+bot@gmail.com" / "bot@shop.it") the sites get;
@@ -49,7 +49,7 @@ class IdMail:
     def __init__(self, log=None):
         self.log = log or (lambda kind, **f: None)
         self.email = os.environ.get("BAI_ACCOUNT_EMAIL", "").strip()
-        self.password = (os.environ.get("BAI_MAIL_PASSWORD") or os.environ.get("BAI_ACCOUNT_PASSWORD") or "").strip().replace(" ", "")
+        self.password = os.environ.get("BAI_MAIL_PASSWORD", "").strip().replace(" ", "")   # ONLY the mailbox's own (app) password — never the site password (a wrong-password storm on the owner's Gmail is the one thing we must never do)
         self.alias = os.environ.get("BAI_MAIL_ALIAS", "").strip().lower()
         dom = self.email.split("@")[-1].lower() if "@" in self.email else ""
         self.host = os.environ.get("BAI_MAIL_IMAP_HOST", "").strip() or GUESS_HOST.get(dom, f"imap.{dom}" if dom else "")

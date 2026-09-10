@@ -11,7 +11,7 @@ import urllib.request
 os.environ.setdefault("BAI_STATE", "/tmp/bai_rehearsal_state")
 os.environ.pop("DISPLAY", None)
 os.environ["BAI_STAGE_PORT"] = "8087"
-os.environ["BAI_ACCOUNT_EMAIL"] = "busynessai001@gmail.com"
+os.environ["BAI_ACCOUNT_EMAIL"] = "stagebot@example.com"
 os.environ["BAI_ACCOUNT_PASSWORD"] = "BusinessAI001!"
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import shutil                                                       # noqa: E402
@@ -66,8 +66,8 @@ line = next((t for t, _ in A.bot.sent if t.startswith("🎭")), "")
 check("stage server started on its own", A.stage is not None and state()["posts"], A.stage and A.stage[1])
 check("report line: posted", "posted in" in line, line[:120])
 st = state()
-mine = [p for p in st["posts"] if p["user"] == "busynessai001"]
-check("account created with own e-mail, post visible under it", "busynessai001@gmail.com" in st["accounts"] and mine, [p["user"] for p in st["posts"]])
+mine = [p for p in st["posts"] if p["user"] == "stagebot"]
+check("account created with own e-mail, post visible under it", "stagebot@example.com" in st["accounts"] and mine, [p["user"] for p in st["posts"]])
 check("photo uploaded with the post", mine and mine[-1]["has_image"])
 check("post text within the platform limits", mine and len(mine[-1]["text"]) <= 300 and mine[-1]["text"].count("#") <= 5, mine and (len(mine[-1]["text"]), mine[-1]["text"].count("#")))
 check("no owner nag for signing up on my own stage", not any(t.startswith("🆕") for t, _ in A.bot.sent))
@@ -86,12 +86,12 @@ if draft_msg:
     time.sleep(1)
     for _ in range(40):
         st = state()
-        p = next((p for p in st["posts"] if p["user"] == "busynessai001"), None)
-        if p and any(c["who"] == "busynessai001" for c in p["comments"]):
+        p = next((p for p in st["posts"] if p["user"] == "stagebot"), None)
+        if p and any(c["who"] == "stagebot" for c in p["comments"]):
             break
         time.sleep(1)
-    p = next((p for p in state()["posts"] if p["user"] == "busynessai001"), None)
-    check("approved reply posted under the post on the stage", p and any(c["who"] == "busynessai001" for c in p["comments"]), p and [c["who"] for c in p["comments"]])
+    p = next((p for p in state()["posts"] if p["user"] == "stagebot"), None)
+    check("approved reply posted under the post on the stage", p and any(c["who"] == "stagebot" for c in p["comments"]), p and [c["who"] for c in p["comments"]])
 else:
     check("approved reply posted under the post on the stage", False, "no draft")
 

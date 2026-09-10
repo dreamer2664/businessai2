@@ -23,7 +23,7 @@ import time
 import urllib.parse
 import uuid
 
-ACCOUNTS = {"busynessai001@gmail.com": {"user": "businessai", "password": "BusinessAI001!"}}
+ACCOUNTS = {"stagebot@example.com": {"user": "businessai", "password": "BusinessAI001!"}}
 SESSIONS = {}
 POSTS = []          # dicts: id, user, text, image(bytes|None), t, comments[{who,text,t}]
 NOTIFS = []

@@ -5,7 +5,7 @@ Item 6: approval gate (fakes always fine, real sites need the owner) + --drill N
 import os, re, sys, time
 sys.path.insert(0, "."); sys.path.insert(0, "tests/signup")
 os.environ.pop("DISPLAY", None); os.environ["BAI_STATE"] = "/tmp/bai_accounts_state"
-os.environ.setdefault("BAI_ACCOUNT_EMAIL", "busynessai001@gmail.com"); os.environ.setdefault("BAI_ACCOUNT_PASSWORD", "BusinessAI001!")
+os.environ.setdefault("BAI_ACCOUNT_EMAIL", "stagebot@example.com"); os.environ.setdefault("BAI_ACCOUNT_PASSWORD", "BusinessAI001!")
 import server as fake
 from agent.tasks import Tasks
 from agent.accounts import Accounts, Identity, NEVER_SIGN_UP
@@ -134,6 +134,32 @@ def run5():
     import os as _os
     return saved and b.session_file.exists() and b.session_file.stat().st_size > 2
 check("browser session (cookies) is saved to state/browser/session.json", T.on_hands(run5, timeout=60))
+# ---- the owner made the account by hand: I only log in, never sign up (2026-09-10) ----------------------------------
+import json as _json, agent.accounts as _acc
+fake.STATE["users"]["carlo.hand@example.com"] = {"email": "carlo.hand@example.com", "password": "HandMade#42"}   # the owner registered on the site himself
+os.environ["BAI_SITES_FILE"] = "/tmp/bai_accounts_state/sites.test.json"
+_acc.SITE_CREDS = _acc.config.pathlib.Path(os.environ["BAI_SITES_FILE"])
+if _acc.SITE_CREDS.exists(): _acc.SITE_CREDS.unlink()
+A7 = Accounts(google=FakeGoogle(), log=lambda k, **f: None, notify=lambda t: notes.append(t), ask=lambda *a: "Never")
+site7 = A7.set_site_creds("127.0.0.1:8098", "carlo.hand@example.com", "HandMade#42", login_url="http://127.0.0.1:8098/login")
+check("owner login saved: site normalised, file mode 600, account book says 'made by the owner'", site7 == "127.0.0.1:8098" and oct(_acc.SITE_CREDS.stat().st_mode)[-3:] == "600" and (A7.known("http://127.0.0.1:8098/x") or {}).get("note", "").startswith("account made by the owner"), (site7, A7.data["accounts"][-1:]))
+n_before = len(notes)
+def run7():
+    b = T.browser()
+    return A7.ensure_account(b, "http://127.0.0.1:8098/some/page", why="owner-made login"), b.page.url
+(ok7, note7), url7 = T.on_hands(run7, timeout=120)
+check("with the owner's login: logs in with THEIR e-mail/password, lands on /welcome, no sign-up, owner not told", ok7 and url7.endswith("/welcome") and len(notes) == n_before, (ok7, note7, url7))
+check("creds_text lists the site without the password", "127.0.0.1:8098: carlo.hand@example.com" in A7.creds_text() and "HandMade" not in A7.creds_text(), A7.creds_text())
+from agent import config as _cfg
+check("redact() hides the owner's site password in any log line", "HandMade#42" not in _cfg.redact("typed HandMade#42 into the form"), _cfg.redact("typed HandMade#42 into the form"))
+A7.set_site_creds("127.0.0.1:8098", "carlo.hand@example.com", "WrongPass")
+def run8():
+    b = T.browser()
+    return A7.ensure_account(b, "http://127.0.0.1:8098/some/page")
+ok8, note8 = T.on_hands(run8, timeout=120)
+check("a wrong owner password → honest line, still no sign-up attempt", not ok8 and "did not work" in note8 and "never try to sign up" in note8, note8)
+check("forget removes the login", A7.forget_site_creds("127.0.0.1:8098") and A7.site_creds("http://127.0.0.1:8098/") is None)
+_acc.SITE_CREDS.unlink(missing_ok=True)
 T.on_hands(T.close_browser, timeout=30)
 print(A.list_text() if show else "")
 print(f"ACCOUNTS SCORE: {ok}/{total}  ({time.time() - t0:.0f}s)")

@@ -14,7 +14,7 @@ LOG_DIR = STATE_DIR / "logs"
 
 _SECRET_KEYS = ("GITHUB_TOKEN", "GH_TOKEN", "TELEGRAM_BOT_TOKEN", "OPENAI_API_KEY",
                 "GROQ_API_KEY", "GOOGLE_API_KEY", "SHOPIFY_TOKEN", "MAIL_PASSWORD", "META_PAGE_TOKEN", "BAI_LLM_KEY",
-                "BAI_ACCOUNT_PASSWORD", "GMAIL_APP_PASSWORD", "FALLBACK_BOT_TOKEN")
+                "BAI_ACCOUNT_PASSWORD", "BAI_MAIL_PASSWORD", "GMAIL_APP_PASSWORD", "FALLBACK_BOT_TOKEN")
 
 
 def load_env(path=SECRETS_FILE):
@@ -57,7 +57,34 @@ def redact(text):
         v = os.environ.get(k)
         if v and len(v) >= 8:
             text = text.replace(v, f"<{k}>")
+    try:                                                                  # the owner's hand-made site passwords too (.secrets/sites.json)
+        import json as _j
+        for v in _site_secrets():
+            if v and len(v) >= 6:
+                text = text.replace(v, "<site-password>")
+    except Exception:
+        pass
     return text
+
+
+_SITE_CACHE = {"t": 0, "vals": []}
+
+
+def _site_secrets():
+    import json as _j, time as _t
+    p = pathlib.Path(os.environ.get("BAI_SITES_FILE") or (ROOT / ".secrets" / "sites.json"))
+    try:
+        mt = p.stat().st_mtime
+    except Exception:
+        return []
+    if _SITE_CACHE["t"] != mt:
+        try:
+            d = _j.loads(p.read_text())
+            _SITE_CACHE["vals"] = [v.get("password", "") for v in d.values() if isinstance(v, dict)]
+        except Exception:
+            _SITE_CACHE["vals"] = []
+        _SITE_CACHE["t"] = mt
+    return _SITE_CACHE["vals"]
 
 
 def ensure_dirs():

@@ -92,6 +92,13 @@ class Bot:
         except TelegramError:
             return None
 
+    def delete_message(self, chat_id, message_id):
+        """Remove a message from the chat (a password the owner typed): best effort, Telegram allows it for 48 h."""
+        try:
+            return self.call("deleteMessage", chat_id=chat_id, message_id=message_id)
+        except TelegramError:
+            return None
+
     def get_file(self, file_id, max_bytes=8_000_000):
         """Download a file the owner sent (photo/screenshot) → bytes, or b'' on failure."""
         try:

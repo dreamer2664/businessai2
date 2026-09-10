@@ -176,6 +176,7 @@ class FakeBot:
     def __getattr__(self, n): return lambda *a, **k: None
 core.Bot = lambda *a, **k: FakeBot()
 os.environ["BAI_STORE_PORT"] = "8193"
+os.environ.pop("BAI_MAIL_PASSWORD", None)                      # this suite tests the Google mailbox path: no IMAP identity here
 A = core.Agent(); A.owner_id = 1
 A.planner.available = lambda: False; A.planner.installed = lambda: False
 A.log = lambda *a, **k: None
@@ -183,7 +184,7 @@ A.google = g; A.mailbox = MB.Mailbox(google=g, log=lambda k, **f: None, owner_ad
 check("agent has the mailbox; accounts share it", A.accounts.mailbox is not None)
 r = A.respond("check my email for the vinted code")
 time.sleep(1.5)
-check("'check my email for the vinted code' → code pasted, via the mailbox", isinstance(r, str) and "Looking in my Gmail" in r and any("📧 Code: 482913" in x for x in A.bot.sent), (r, A.bot.sent))
+check("'check my email for the vinted code' → code pasted, via the mailbox", isinstance(r, str) and r.startswith("Looking in ") and any("📧 Code: 482913" in x for x in A.bot.sent), (r, A.bot.sent))
 A.bot.sent.clear()
 r = A.respond("tidy the inbox")
 time.sleep(1.5)

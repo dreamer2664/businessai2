@@ -1,6 +1,8 @@
 # Gmail as a tool (owner's item G)
 
-The app's own mailbox (busynessai001@gmail.com) is where sign-up codes, platform notices and the odd real
+> **2026-09-10:** the bot's Gmail was banned. The identity mailbox is now any IMAP mailbox (agent/idmail.py, read-only); everything below applies only if a Google account is connected again, which is optional.
+
+The app's own mailbox (when a Google account is connected) is where sign-up codes, platform notices and the odd real
 person land. `agent/mailbox.py` keeps it sorted and uses it — official Gmail API, scope `gmail.modify`
 (already granted), **nothing is ever deleted or sent from here**: labels, archive (remove INBOX) and mark-read only.
 
