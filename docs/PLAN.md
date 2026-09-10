@@ -373,3 +373,21 @@ VERSION 2.0 (2026-09-08): the shop grows extras and a designer — discount code
 - Verified: a fresh Agent resumes a saved watch, announces better deals, "stop watching" clears it. Banggood, AliExpress and
   DHgate now all read from the sandbox with the Italian browser (DHgate's Cloudflare clears within the 9 s wait).
 - score_deals 35 → 43 (39 offline + 4 live).
+
+## 2026-09-10 (owner away, round 3) — the document on a phone; honest "nothing" lines; "watch it" — done
+- Rendered the deals document at 390 px (a phone). The 5-column glance table did not fit → `Doc.glance()`: one card per item
+  (name, green price, where · condition · "open the listing →"); listing titles link to the listing, the url line is short and
+  readable; tables scroll horizontally on small screens.
+- Zero results are explained, never bare: `DealHunter.nothing_line()` says which of (a) no site answered (+ each reason),
+  (b) matches existed but all over the cap ("real ones start around € 280"), (c) only look-alikes (games/accessories/other
+  model — listed apart as "Close, but not it"), (d) no listing with those words on the sites that answered (+ which could not be
+  searched); the long form adds a tip (raise the limit / fewer words / "watch it").
+- "best" = clean matches only; look-alikes (penalty 1–2) go to a separate "Close, but not it" list, never counted as best.
+  Live check exposed the case: "xbox series x max 30" used to return a € 1 placeholder, then a € 27 game ("Stray Xbox series X
+  one S"). Fixes: € 1–3 is always a placeholder; `FLOOR_PRICE` (what a working unit can't be sold below: Series X 200, PS5 250,
+  Switch 90, iPhone 13 200, Dyson V8 50 …); two console families in a title = a game; bundles ("+ 2 controller", "con 2 giochi",
+  "completa", "boxata") are the item, not an accessory. "starts around" uses the second-cheapest real one when there are ≥ 3.
+- "watch it" / "watch nintendo switch max 150 for 3 hours" / "keep an eye on the xbox for 2 days" → a Watcher for those items
+  (the empty ones of the last hunt by default; caps and sites from the last hunt; ≤ 7 days). An item with no best yet announces
+  "🔔 First real listing …". Scratch keys (_seen, _over_cap …) never reach state/watch.json.
+- score_deals 43 → 54 (50 offline + 4 live).

@@ -28,8 +28,17 @@ h1{font-size:1.6em;margin:.2em 0}h2{font-size:1.2em;margin:1.4em 0 .4em;border-b
 table{border-collapse:collapse;width:100%;font-size:.95em}td,th{border-bottom:1px solid #eee;padding:6px 8px;text-align:left;vertical-align:top}
 .src{font-size:.85em;color:#666;word-break:break-all}.tag{display:inline-block;background:#eef2ff;color:#3730a3;border-radius:6px;padding:1px 7px;font-size:.8em;margin-right:4px}
 .small{font-size:.85em;color:#666}ul{margin:.3em 0 .3em 1.2em}
-@media(max-width:600px){.opt{grid-template-columns:1fr}.opt img,.opt .noimg{width:100%;height:200px}}
+.glance{display:grid;gap:8px;margin:8px 0}.g{display:grid;grid-template-columns:1fr auto;gap:2px 12px;border:1px solid #e5e5e5;border-radius:10px;padding:10px 12px}
+.g .n{font-weight:600}.g .p{font-weight:700;color:#1a7f37;white-space:nowrap}.g .w{color:#666;font-size:.9em;grid-column:1/-1}.g a{font-size:.9em}
+.opt h3 a{color:inherit;text-decoration:none}.opt .src a{word-break:break-all}.pill{display:inline-block;border-radius:6px;padding:1px 7px;font-size:.8em;background:#f1f5f9;color:#334155;margin-right:4px}
+@media(max-width:600px){body{margin:12px auto}.opt{grid-template-columns:1fr}.opt img,.opt .noimg{width:100%;height:200px}table{display:block;overflow-x:auto}h1{font-size:1.35em}}
 """
+
+
+def _short_url(u, n=48):
+    """vinted.it/items/99…-nintendo-switch — readable on a phone, the full url stays in href."""
+    s = re.sub(r"^https?://(www\.)?", "", u or "")
+    return s if len(s) <= n else s[:n - 1] + "…"
 
 
 def _slug(text, n=48):
@@ -78,14 +87,23 @@ class Doc:
         if cons:
             pc += "<div class=small>👎 " + " · ".join(html.escape(c) for c in cons) + "</div>"
         self.parts.append(
-            f'<div class=opt>{img}<div><h3 style="margin:0 0 4px">{self.n_options}. {html.escape(name)}'
+            f'<div class=opt>{img}<div><h3 style="margin:0 0 4px">{self.n_options}. ' + (f'<a href="{html.escape(url)}">{html.escape(name)}</a>' if url else html.escape(name))
             + (f' <span class=tag>{html.escape(price)}</span>' if price else "") + "</h3>"
-            + f'<div class=src><a href="{html.escape(url)}">{html.escape(url[:90])}</a></div>'
+            + (f'<div class=src><a href="{html.escape(url)}">open the listing → {html.escape(_short_url(url))}</a></div>' if url else "")
             + (f'<table style="margin:8px 0">{facts_html}</table>' if facts_html else "")
             + (f'<div class="verdict {grade}">{html.escape(verdict)}</div>' if verdict else "")
             + pc + (f"<p class=small>{_inline(note)}</p>" if note else "") + "</div></div>")
         if url:
             self.sources.append(url)
+        return self
+
+    def glance(self, heading, rows):
+        """Phone-friendly summary cards: rows = [(name, price_text, where_text, url or "")]. Replaces a wide table."""
+        cards = []
+        for name, price, where, url in rows:
+            cards.append(f'<div class=g><div class=n>{html.escape(str(name))}</div><div class=p>{html.escape(str(price))}</div>'
+                         + f'<div class=w>{html.escape(str(where))}' + (f' · <a href="{html.escape(url)}">open the listing →</a>' if url else "") + '</div></div>')
+        self.parts.append(f"<h2>{html.escape(heading)}</h2><div class=glance>" + "".join(cards) + "</div>")
         return self
 
     def source(self, url, title=""):

@@ -111,3 +111,7 @@ Reality check on 2026-09-09 with the real browser:
   Run it once on your PC — your home connection will get different answers than my sandbox (e.g. Wallapop/eBay may work for you).
 - (round 2) If a list line is vague ("iphone", "bici", "tv") it asks once — all questions in one message — then searches; say
   "go anyway" to skip. The 15-minute watch now survives a bot restart; "what are you watching?" / "stop watching" work.
+- (round 3) The document reads well on a phone now (cards instead of a wide table; tap the title to open the listing). When an
+  item comes back empty it says why ("only look-alikes under € 30 — real ones start around € 280") and what to do. You can say
+  "watch it", "watch nintendo switch max 150 for 3 hours" or "keep an eye on the xbox for 2 days" — it checks every 15 min and
+  speaks only when a real one appears or beats the best.

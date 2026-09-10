@@ -24,8 +24,11 @@ ACCESSORY = re.compile(r"\b(custodi[ae]|cases?|cover|cavo|cavi|cables?|caricator
                        r"bocchetta|beccuccio|nozzle|attachment|accessorio|serbatoio|tank|motore|motor|scheda|board|display|schermo|screen|vetro|glass|"
                        r"controller|joy-?con|gioco|game|giochi|games|skin|sticker|manuale|scatola|box only|solo scatola|ricambio|parts?|pezzi|batteria|battery|"
                        r"borsa|bag|zaino|filtro|filter|spazzola|brush|accessori[oi]?|accessor(y|ies)|compatibile con|per nintendo|for nintendo|per iphone|for iphone)\b", re.I)
-GAME_WORDS = re.compile(r"\b(zelda|mario|pok[eé]mon|kirby|splatoon|animal crossing|metroid|smash|fifa|fc ?2[0-9]|gta|call of duty|minecraft|fortnite|luigi|donkey kong|"
-                        r"just dance|ring fit|switch sports|gioco|giochi|game|games|videogioco|cartuccia|cartridge|edizione digitale|codice download)\b", re.I)   # a game titled with the console's name
+GAME_WORDS = re.compile(r"\b(zelda|mario|pok[eé]mon|kirby|splatoon|animal crossing|metroid|smash|fifa|fc ?2[0-9]|gta|call of duty|cod|minecraft|fortnite|luigi|donkey kong|"
+                        r"just dance|ring fit|switch sports|gioco|giochi|game|games|videogioco|videogiochi|cartuccia|cartridge|edizione digitale|codice download|"
+                        r"need for speed|hot pursuit|assassin|far cry|forza|halo|gears|battlefield|nba ?2k|f1 ?2[0-9]|pes|efootball|tekken|mortal kombat|resident evil|"
+                        r"spider-?man|god of war|last of us|uncharted|horizon|elden ring|dark souls|sekiro|hogwarts|lego [a-z]|sonic|crash|spyro|rayman|skyrim|witcher|cyberpunk|red dead|"
+                        r"per (?:xbox|ps[345]|playstation|switch|nintendo|wii)|for (?:xbox|ps[345]|playstation|switch|nintendo|wii)|(?:xbox|ps[345]|playstation|switch) (?:one )?(?:e|and|&|/) (?:xbox|ps[345]|series))\b", re.I)   # a game titled with the console's name
 BROKEN = re.compile(r"\b(non funziona|not working|rott[oa]|broken|per ricambi|for parts|guast[oa]|difettos[oa]|faulty|da riparare|schermo rotto|cracked)\b", re.I)
 KNOWN_SITES = ("vinted", "subito", "wallapop", "ebay", "temu", "shein", "dhgate", "banggood", "aliexpress", "amazon", "facebook marketplace")
 USED_SITES = {"vinted", "subito", "wallapop", "facebook marketplace"}                  # private sellers, second-hand
@@ -120,6 +123,8 @@ def price_is_placeholder(price, ref_price=None):
     a card is never 'the best deal' (the doc still lists it, marked)."""
     if not isinstance(price, (int, float)):
         return True
+    if price <= 3:                                                    # € 1–3 is never a price, whatever the item
+        return True
     if price in PLACEHOLDER_PRICES and (ref_price is None or price < ref_price * 0.5 or price > ref_price * 4):
         return True
     return bool(ref_price) and price < ref_price * 0.15
@@ -130,11 +135,28 @@ def typical_price(cards, name):
     numbers), so a page of € 1 hangers cannot drag it down."""
     clean = [(c.get("total") or c.get("price")) for c in cards
              if isinstance(c.get("price"), (int, float)) and not ACCESSORY.search(c.get("title") or "") and not BROKEN.search(c.get("title") or "") and not GAME_WORDS.search(c.get("title") or "")
-             and not (VARIANT.search(c.get("title") or "") and not VARIANT.search(name)) and (c.get("total") or c.get("price")) not in PLACEHOLDER_PRICES]
-    clean = sorted(x for x in clean if x)
+             and not (VARIANT.search(c.get("title") or "") and not VARIANT.search(name)) and not price_is_placeholder(c.get("total") or c.get("price"))]
+    fl = floor_price(name)
+    clean = sorted(x for x in clean if x and (not fl or x >= fl))
     if not clean:
         return None
     return clean[len(clean) // 2]
+
+
+# what a working unit of these can't realistically be sold for second-hand (below = a game, a box, an accessory or broken)
+FLOOR_PRICE = [(r"\bxbox series x\b", 200), (r"\bxbox series s\b", 120), (r"\bxbox one\b", 60), (r"\bps5\b|\bplaystation 5\b", 250), (r"\bps4 pro\b", 120), (r"\bps4\b|\bplaystation 4\b", 80),
+               (r"\bnintendo switch oled\b", 150), (r"\bnintendo switch lite\b", 70), (r"\bnintendo switch\b|\bswitch\b", 90), (r"\bsteam deck\b", 200),
+               (r"\biphone 1[5-6]\b", 300), (r"\biphone 1[3-4]\b", 200), (r"\biphone 1[1-2]\b", 120), (r"\bmacbook\b", 200), (r"\bipad pro\b", 200), (r"\bipad\b", 80),
+               (r"\bdyson v1[0-5]\b", 120), (r"\bdyson v[6-8]\b", 50), (r"\bairpods pro\b", 60), (r"\bgopro\b", 60), (r"\bkindle\b", 40), (r"\bthermomix\b|\bbimby\b", 300)]
+MULTI_CONSOLE = re.compile(r"\b(xbox|ps[345]|playstation|switch|nintendo|series [sx]|one [sx]?)\b.*\b(xbox|ps[345]|playstation|switch|nintendo|series [sx]|one [sx]?)\b", re.I)
+
+
+def floor_price(name):
+    low = name.lower()
+    for pat, fl in FLOOR_PRICE:
+        if re.search(pat, low):
+            return fl
+    return None
 
 
 def rank_key(card, name, ref_price=None):
@@ -146,10 +168,22 @@ def rank_key(card, name, ref_price=None):
     penalty = 0
     if price_is_placeholder(card.get("total") or card.get("price"), ref_price):
         penalty += 4
-    if ACCESSORY.search(title) and not ACCESSORY.search(name):
-        penalty += 2
-    if GAME_WORDS.search(title) and not GAME_WORDS.search(name) and re.search(r"\b(switch|ps[345]|playstation|xbox|wii|3ds|nintendo)\b", name, re.I):
-        penalty += 2                                                  # "Nintendo switch zelda" at € 30 is the game, not the console
+    bundle = bool(re.search(r"\bbundle|lotto|completa|completo|con \d|\+ ?\d|\+ (?:\d+ )?(?:giochi|games|controller|joy)|set completo|in scatola|boxata", title, re.I))
+    if ACCESSORY.search(title) and not ACCESSORY.search(name) and not (bundle and _has(item_words(name)[0], title.lower()) if item_words(name) else False):
+        penalty += 2                                                  # "Xbox + 2 controller bundle" is the console with extras, not a controller
+    if GAME_WORDS.search(title) and not GAME_WORDS.search(name) and re.search(r"\b(switch|ps[345]|playstation|xbox|wii|3ds|nintendo)\b", name, re.I) \
+            and not (bundle and re.search(r"\bcon \d+ (?:giochi|games)|\+ ?\d+ (?:giochi|games)|with \d+ games", title, re.I)):
+        penalty += 2                                                  # "Nintendo switch zelda" at € 30 is the game, not the console; "PS5 con 2 giochi" is the console
+    fl = floor_price(name)
+    if fl and isinstance(total, (int, float)) and total < fl:
+        penalty += 2                                                  # a working Xbox Series X is never € 27: a game or a part, whatever the title
+    tw = title.lower()
+    fams = set()
+    for fam, pat in (("xbox", r"\bxbox\b|\bseries [sx]\b"), ("ps", r"\bps[345]\b|\bplaystation\b"), ("switch", r"\bswitch\b|\bnintendo\b"), ("pc", r"\bpc\b|\bsteam\b")):
+        if re.search(pat, tw):
+            fams.add(fam)
+    if re.search(r"\b(xbox|ps[345]|playstation|switch|nintendo)\b", name, re.I) and len(fams) >= 2 and not bundle:
+        penalty += 2                                                  # "Stray Xbox series X one S / PS5" names two families: a game that runs on both
     if VARIANT.search(title) and not VARIANT.search(name):
         penalty += 1
     if ref_price and total < ref_price * 0.4 and len(title.split()) <= 3 and total < 45:
@@ -299,6 +333,7 @@ class DealHunter:
                     break
                 self._step(1, f"item {i + 1}/{len(items)}: {it['name']} — searching {', '.join(sites)}" + (" (deep)" if depth == 3 else ""))
                 found = []
+                it["_seen"], it["_min"] = 0, None
                 for s in sites:
                     if self._stopped():
                         break
@@ -309,14 +344,26 @@ class DealHunter:
                     for c in cards:
                         if not matches(c, it["name"]):
                             continue
-                        if it.get("max") and (c.get("total") or c.get("price") or 0) > it["max"]:
+                        it["_seen"] += 1
+                        pr = c.get("total") or c.get("price") or 0
+                        if pr and (it["_min"] is None or pr < it["_min"]):
+                            it["_min"] = pr
+                        if it.get("max") and pr > it["max"]:
+                            if rank_key(c, it["name"], None)[0] == 0 and not price_is_placeholder(pr):
+                                it.setdefault("_over_cap", []).append(pr)                 # real ones over the cap: the owner wants to know where they start
                             continue
                         if s == "facebook marketplace" and not city_ok(c, city):
                             continue
                         found.append(c)
                 ref = typical_price(found, it["name"])                                  # what the item really costs used (clean matches only)
                 found.sort(key=lambda c: rank_key(c, it["name"], ref))
-                best = found[:per_item]
+                clean = [c for c in found if rank_key(c, it["name"], ref)[0] == 0]
+                near = [c for c in found if rank_key(c, it["name"], ref)[0] in (1, 2)][:3]   # a variant / accessory / game: shown apart, never as 'best'
+                best = clean[:per_item]
+                it["_near"] = bool(near) and not clean
+                over = sorted(it.get("_over_cap") or [])
+                if over:                                                                 # "starts around": the cheapest real one, but not a lone outlier — the second-cheapest when there are several
+                    it["_min_clean"] = over[0] if len(over) < 3 else over[1]
                 # the top listing(s): open for the seller's feedback (Vinted/subito deep reader); deeper = more of them
                 verify = {1: 1, 2: 1, 3: min(3, len(best))}[depth]
                 for k, c in enumerate(best[:verify]):
@@ -340,7 +387,7 @@ class DealHunter:
                             c["image"] = SellerCheck._fetch_image(None, b, c["image_url"], max_bytes=120000)
                         except Exception:
                             pass
-                results.append({"item": it, "best": best, "n_found": len(found), "ref": ref})
+                results.append({"item": it, "best": best, "near": near, "n_found": len(found), "n_clean": len(clean), "ref": ref})
                 if self.pace:
                     try:
                         r = self.pace.tick()
@@ -378,12 +425,40 @@ class DealHunter:
             bits.append(fb)
         return f"{c['title'][:60]} — " + " · ".join(x for x in bits if x) + f" ({c['site']})"
 
+    @staticmethod
+    def nothing_line(it, sites, notes, long=False):
+        """Why an item came back empty, in words the owner can act on — never a bare 'nothing found'."""
+        answered = [s for s in sites if s not in notes]
+        blocked = [s for s in sites if s in notes]
+        cap = f" under € {it['max']}" if it.get("max") else ""
+        seen = it.get("_seen", 0)
+        if it.get("_near"):
+            why = f"only look-alikes on {', '.join(answered)} — games, accessories or a different model (listed below as “close, but not it”)" + (f"; real ones start around € {it['_min_clean']:.0f}" if it.get("_min_clean") else "")
+            return f"nothing{cap}: {why}." + (f" Say “watch it” and I tell you when a real one appears{cap}." if long else "")
+        if not answered:
+            why = "none of the sites answered (" + "; ".join(f"{s}: {notes[s].split(': ', 1)[-1][:60]}" for s in blocked) + ")"
+        elif seen and it.get("max"):
+            why = f"{seen} listing(s) matched but all cost more than € {it['max']} on {', '.join(answered)}" + (f"; real ones start around € {it['_min_clean']:.0f}" if it.get("_min_clean") else "")
+        elif seen:
+            why = f"{seen} listing(s) had the words but none looked like the real item (accessories, games or parts) on {', '.join(answered)}"
+        else:
+            why = f"no listing with those words on {', '.join(answered)}" + (f" ({', '.join(blocked)} could not be searched)" if blocked else "")
+        tip = ""
+        if long:
+            if it.get("max") and seen:
+                tip = f" Try a higher limit, or say “watch it” and I tell you when one appears{cap}."
+            elif len(item_words(it["name"])) >= 3:
+                tip = " Try fewer words (the model name only), or a synonym — private sellers write titles their own way."
+            else:
+                tip = " It may simply not be for sale second-hand right now — say “watch it” and I check every 15 minutes."
+        return f"nothing{cap}: {why}." + tip
+
     def summary(self, results, notes, sites, secs):
         out = []
         for r in results:
             it = r["item"]
             if not r["best"]:
-                out.append(f"• {it['name']}: nothing that matched" + (f" under € {it['max']}" if it.get("max") else "") + f" on {', '.join(sites)}.")
+                out.append(f"• {it['name']}: " + self.nothing_line(it, sites, notes))
                 continue
             b0 = r["best"][0]
             tag = ""
@@ -402,19 +477,25 @@ class DealHunter:
             if r["best"]:
                 b0 = r["best"][0]
                 p = b0.get("total") or b0.get("price")
-                rows.append([it["name"], f"€ {p:.2f}" if isinstance(p, (int, float)) else "—", b0["site"], (b0.get("location") or b0.get("condition") or ""), f"{b0['title'][:40]}\n{b0.get('url', '')}"])
+                sym = {"USD": "$", "GBP": "£"}.get(b0.get("currency") or "EUR", "€")
+                where = " · ".join(x for x in (b0["site"], b0.get("condition") or "", b0.get("location") or "", ("new, from a shop" if b0["site"] in NEW_SITES else "")) if x)
+                rows.append((it["name"], f"{sym} {p:.2f}" if isinstance(p, (int, float)) else "—", where, b0.get("url", "")))
             else:
-                rows.append([it["name"], "—", "—", "nothing matched" + (f" under € {it['max']}" if it.get("max") else ""), ""])
-        d.table("At a glance — best price per item", rows, header=["Item", "Best price", "Where", "Where it is / condition", "Listing"])
+                rows.append((it["name"], "—", self.nothing_line(it, sites, notes), ""))
+        d.glance("At a glance — best price per item", rows)
         if any(s_ in NEW_SITES for s_ in sites) and any(s_ in USED_SITES for s_ in sites):
-            d.section("Used vs new", "Vinted, Subito, Wallapop and Facebook are private sellers (second-hand, often pick-up or tracked shipping in Italy). "
-                      "AliExpress, Banggood, DHgate, Temu and Shein are shops selling new goods, mostly shipped from China: 1–4 weeks, and orders over € 150 pay customs. "
-                      "Each listing below says which it is.")
+            d.section("Used vs new", "Vinted / Subito / Wallapop / Facebook = private sellers, second-hand. AliExpress / Banggood / DHgate / Temu / Shein = shops, new, "
+                      "usually shipped from China (1–4 weeks; customs above € 150). Each card says which.")
         for r in results:
             it = r["item"]
             d.section(it["name"] + (f" (max € {it['max']})" if it.get("max") else ""),
-                      f"{r['n_found']} matching listing(s) seen; typical used price around € {r['ref']:.0f}." if r["ref"] else "No matching listing on the sites that answered.")
-            for c in r["best"]:
+                      f"{r['n_found']} matching listing(s) seen; typical used price around € {r['ref']:.0f}." if r["ref"] else self.nothing_line(it, sites, notes, long=True))
+            cards = [(c, False) for c in r["best"]] + [(c, True) for c in (r.get("near") or [])]
+            near_header_done = False
+            for c, is_near in cards:
+                if is_near and not near_header_done:
+                    near_header_done = True
+                    d.section("Close, but not it", "Same words, different thing — a game, an accessory or another model. Here so you can judge; never counted as the best.")
                 p = c.get("total") or c.get("price")
                 sym = {"USD": "$", "GBP": "£"}.get(c.get("currency") or "EUR", "€")
                 facts = {"Price": f"{sym} {p:.2f}" if isinstance(p, (int, float)) else "", "Condition": c.get("condition", ""), "Where": c.get("location", ""),
@@ -464,7 +545,8 @@ class Watcher:
         try:
             WATCH_FILE.parent.mkdir(parents=True, exist_ok=True)
             best = {k: {kk: vv for kk, vv in v.items() if kk not in ("image", "facts")} for k, v in self.best.items()}
-            WATCH_FILE.write_text(json.dumps({"items": self.items, "sites": self.sites, "best": best, "seen": sorted(self.seen)[-2000:],
+            items = [{k: v for k, v in it.items() if not k.startswith("_")} for it in self.items]
+            WATCH_FILE.write_text(json.dumps({"items": items, "sites": self.sites, "best": best, "seen": sorted(self.seen)[-2000:],
                                               "until": self.until, "started": self.started, "rounds": self.rounds, "found": self.found}, ensure_ascii=False), encoding="utf-8")
         except Exception:
             pass
@@ -528,7 +610,10 @@ class Watcher:
                                 continue
                             key = rank_key(c, it["name"], ref)
                             cur = self.best.get(it["name"])
-                            if cur is None or key < rank_key(cur, it["name"], ref):
+                            if cur is None and key[0] == 0:
+                                self.best[it["name"]] = c
+                                better.append(f"🔔 First real listing for {it['name']}: {DealHunter._line(c)}\n{c['url']}")
+                            elif cur is not None and key < rank_key(cur, it["name"], ref):
                                 self.best[it["name"]] = c
                                 better.append(f"🔔 Better deal for {it['name']}: {DealHunter._line(c)}\n{c['url']}")
         self.h.T._release_page()

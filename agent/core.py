@@ -1078,6 +1078,40 @@ class Agent:
             if getattr(self, "_in_floor", False):
                 self.stop_flag = True; self.pace.stop_now()
             return f"Okay — watch ended after {w.rounds if w else 0} round(s), {w.found if w else 0} better deal(s) found."
+        m_w = re.match(r"^\W*(?:watch|keep watching|keep an eye on|keep looking for|tienimi d'occhio|controlla)\s+(?:it|them|for it|that one|quello|quelli|(?P<what>[^.!?]{2,80}?))(?:\s+(?:for|per)\s+(?P<dur>\d+\s*(?:h(?:ou)?rs?|ore|min(?:ute)?s?|minuti|days?|giorni)))?\W*$", low)
+        if m_w and not self.busy:
+            from .deals import Watcher
+            what = (m_w.group("what") or "").strip()
+            what = re.sub(r"\b(?:max|under|below|sotto|entro)\s*€?\s*\d{1,5}\s*(?:€|eur|euro)?\b", " ", what, flags=re.I)
+            what = re.sub(r"^(?:the|a|an|il|la|lo|l')\s+", "", re.sub(r"\s{2,}", " ", what)).strip(" ,.-")
+            last = getattr(self, "_last_deals", None) or []
+            if what and not re.fullmatch(r"(it|them|that one|quello|quelli)", what):
+                items = [{"name": what, "max": None}]
+                for r in last:                                                   # "watch the xbox" → the list item with its cap
+                    if what in r["item"]["name"] or r["item"]["name"] in what or set(what.split()) & set(r["item"]["name"].split()):
+                        items = [dict(r["item"])]
+            else:
+                empty = [dict(r["item"]) for r in last if not r.get("best")]
+                items = empty or [dict(r["item"]) for r in last]
+            if not items:
+                return "Watch what? Say e.g. “watch nintendo switch max 150” — or run a deal hunt first and then “watch it”."
+            for it in items:
+                m_max = re.search(r"\b(?:max|under|below|sotto|entro)\s*€?\s*(\d{1,5})", low)
+                if m_max:
+                    it["max"] = int(m_max.group(1))
+                for k_ in ("_seen", "_min", "_min_clean", "_over_cap", "_near"): it.pop(k_, None)
+            from .brief import parse_duration
+            dur = m_w.group("dur") or ""
+            md = re.match(r"(\d+)\s*(days?|giorni)", dur)
+            mins = int(md.group(1)) * 24 * 60 if md else (parse_duration(dur) or 24 * 60)
+            mins = min(mins, 7 * 24 * 60)                                         # a week at most; the owner can renew
+            sites = [s_ for s_ in (getattr(self, "_last_sites", None) or ["vinted", "subito"]) if s_ in ("vinted", "subito")] or ["vinted", "subito"]
+            Watcher.clear()
+            self.watch = self.deals.watcher(items, sites, [r for r in last if r["item"]["name"] in {i["name"] for i in items}], until=time.time() + 60 * mins)
+            self._watch_last = 0
+            names = ", ".join(i["name"] + (f" (max € {i['max']})" if i.get("max") else "") for i in items)
+            span = f"{mins // 1440} day(s)" if mins >= 1440 and mins % 1440 == 0 else f"{mins // 60} h {mins % 60} min"
+            return f"👀 Watching {', '.join(sites)} for {names} for the next {span} — a check every {self.deals.WATCH_EVERY // 60} min, I speak only when a new listing beats what we have (or the first one appears). “stop watching” ends it."
         if re.fullmatch(r"\W*(what|which|who) are you watching\??\W*|\W*(are you )?(still )?watching( the (sites|marketplaces|deals))?\??\W*|\W*cosa stai (controllando|guardando)\??\W*", low):
             w = getattr(self, "watch", None)
             return w.status() if w else "I'm not watching any marketplace right now — a deal hunt with a time floor ('take 5-6 hours') starts one after the first document."
@@ -1861,6 +1895,7 @@ class Agent:
             sites = list(b.get("sites") or ())
             path, summary, results = self.tasks.on_hands(self.deals.run, b["items"], sites, city, 4, True, timeout=3000)
             self._last_deals = results
+            self._last_sites = sites
             link = ""
             if path and self.google.connected():
                 link = self.hand_over_doc(path, None, folder="Research")

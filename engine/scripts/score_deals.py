@@ -39,6 +39,12 @@ check("broken unit after the real ones", order.index("Nintendo Switch non funzio
 check("'Nintendo switch zelda' € 30 is a game, not the cheapest console", D.rank_key({"title": "Nintendo switch zelda", "price": 30}, "nintendo switch", 105)[0] >= 2)
 check("'Nintendo switch' € 40, bare title, far below typical → not the top pick", D.rank_key({"title": "Nintendo switch", "price": 40.6}, "nintendo switch", 105)[0] >= 1)
 check("'Nintendo Switch Completa!' € 104 stays clean", D.rank_key({"title": "Nintendo Switch Completa!", "price": 104.65}, "nintendo switch", 105)[0] == 0)
+check("'Stray Xbox series X one S' € 27 is a game (two console families + below the floor)", D.rank_key({"title": "Stray Xbox series X one S", "price": 26.95}, "xbox series x", None)[0] >= 2)
+check("'Xbox series x come nuova' € 30 is below any real Series X → penalised", D.rank_key({"title": "Xbox series x come nuova", "price": 30}, "xbox series x", None)[0] >= 2)
+check("'Xbox Series X + 2 controller bundle' € 320 is the console (bundle, not an accessory)", D.rank_key({"title": "Xbox Series X + 2 controller bundle", "price": 320}, "xbox series x", None)[0] == 0)
+check("'PS5 con 2 giochi' € 350 is the console", D.rank_key({"title": "PS5 con 2 giochi", "price": 350}, "ps5", None)[0] == 0)
+check("'FIFA 23 PS4 e PS5' € 15 is a game", D.rank_key({"title": "FIFA 23 PS4 e PS5", "price": 15}, "ps5", None)[0] >= 2)
+check("€ 1–3 is always a placeholder, even with no typical price", D.price_is_placeholder(1.0) and D.price_is_placeholder(3) and not D.price_is_placeholder(25))
 dy = [{"title": "Dyson v8 Cyclone Hanger", "price": 11.2}, {"title": "Dyson v8", "price": 42.7}, {"title": "Dyson V8 Absolute", "price": 99}, {"title": "Filtri Dyson V8", "price": 16}]
 refd = D.typical_price(dy, "dyson v8")
 best = min(dy, key=lambda c: D.rank_key(c, "dyson v8", refd))
@@ -72,11 +78,17 @@ res = [{"item": {"name": "dyson v8", "max": None}, "best": [dict(dy[1], site="vi
        {"item": {"name": "xbox one", "max": 50}, "best": [], "n_found": 0, "ref": None}]
 txt = H.summary(res, {"wallapop": "wallapop: blocks this machine (an error page instead of results) — it may work from your PC"}, ["vinted", "wallapop"], 95)
 check("summary: one line per item, best deal with price + site", "• dyson v8: best Dyson v8 — € 42.70 · good · seller anna (vinted)" in txt, txt)
-check("summary: an item with nothing says so with the cap", "xbox one: nothing that matched under € 50" in txt, txt)
+check("summary: an item with nothing says so with the cap and why", "xbox one: nothing under € 50: no listing with those words on vinted" in txt and "wallapop could not be searched" in txt, txt)
 check("summary: blocked sites are named honestly", "Not searched properly: wallapop" in txt, txt)
 path = H.document(res, {}, ["vinted", "banggood"], "Barletta")
 html = open(path, encoding="utf-8").read()
-check("document: glance table + used-vs-new note + kind per listing", "At a glance" in html and "Used vs new" in html and "second-hand, private seller" in html, path)
+check("document: glance cards + used-vs-new note + kind per listing", "At a glance" in html and 'class=glance' in html and "Used vs new" in html and "second-hand, private seller" in html, path)
+check("document: the listing title links to the listing, short readable url", 'open the listing → vinted.it/items/1' in html, path)
+check("document: the empty item explains why and what to do", "nothing under € 50" in html and ("watch it" in html or "Try" in html), path)
+nl = H.nothing_line({"name": "xbox series x", "max": 30, "_seen": 5, "_near": True, "_min_clean": 280}, ["vinted", "subito"], {}, long=True)
+check("nothing_line: look-alikes + 'real ones start around € 280' + watch tip", "look-alikes" in nl and "€ 280" in nl and "watch it" in nl, nl)
+nl = H.nothing_line({"name": "xbox one", "max": 50, "_seen": 0}, ["vinted", "wallapop"], {"wallapop": "wallapop: blocks this machine"}, long=True)
+check("nothing_line: no listing at all → says which sites answered and which could not be searched", "no listing with those words on vinted" in nl and "wallapop could not be searched" in nl, nl)
 
 # ---- depth from the pace ---------------------------------------------------------------------------------------
 from agent.pace import Pace
@@ -92,13 +104,14 @@ def fake_search(b, site, query, limit=8, throttle=None, price_to=None, order=Non
     _calls["n"] += 1
     if _calls["n"] <= 2:                       # round 1 = two passes (newest + price) → old card only; from round 2 the new one appears
         return [{"title": "Dyson v8", "price": 60, "url": "https://x/1"}], ""
-    return [{"title": "Dyson v8 absolute", "price": 35, "url": "https://x/2"}, {"title": "Dyson v8", "price": 60, "url": "https://x/1"}], ""
+    return [{"title": "Dyson v8 absolute", "price": 52, "url": "https://x/2"}, {"title": "Dyson v8", "price": 60, "url": "https://x/1"}], ""
 _orig = markets.search_market; markets.search_market = fake_search
 W = H.watcher([{"name": "dyson v8", "max": None}], ["vinted"], [{"item": {"name": "dyson v8", "max": None}, "best": [{"title": "Dyson v8", "price": 60, "url": "https://x/1", "site": "vinted"}], "n_found": 1, "ref": 60}])
 better, line = W.round()
 check("watch round 1: nothing new → silent", better == [] and "0 better" in line, (better, line))
 better, line = W.round()
 check("watch round 2: a cheaper real listing → one 🔔 message with the link", len(better) == 1 and better[0].startswith("🔔 Better deal for dyson v8") and "https://x/2" in better[0], better)
+check("a € 35 'Dyson V8' is below what a working one costs → never the best", D.rank_key({"title": "Dyson v8", "price": 35}, "dyson v8", 60)[0] >= 2)
 better, line = W.round()
 check("watch round 3: the same listing is not announced twice", better == [], better)
 markets.search_market = _orig
